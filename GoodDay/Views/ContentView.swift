@@ -128,9 +128,10 @@ struct ContentView: View {
             .background(.backgroundColor)
         }
         .sheet(item: $selectedDate) { date in
+            let entry = entries.first(where: { $0.createdAt == date.date})
             EntryEditingSheetView(
                 date: date.date,
-                entries: entries,
+                entry: entry,
                 isEditMode: $isEditMode,
                 editedText: $editedText
             )
