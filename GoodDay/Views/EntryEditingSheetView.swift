@@ -8,7 +8,7 @@
 import SwiftUI
 import SwiftData
 
-struct EntryEditingSheet: View {
+struct EntryEditingSheetView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.modelContext) private var modelContext
     

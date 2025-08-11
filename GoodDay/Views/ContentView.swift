@@ -128,7 +128,7 @@ struct ContentView: View {
             .background(.backgroundColor)
         }
         .sheet(item: $selectedDate) { date in
-            EntryEditingSheet(
+            EntryEditingSheetView(
                 date: date.date,
                 entries: entries,
                 isEditMode: $isEditMode,
