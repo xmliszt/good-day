@@ -29,12 +29,8 @@ struct DotView: View {
     // MARK: Computed dot color
     private var dotColor: Color {
         // Override base color if it is a present dot.
-        if dotStyle == .present || highlighted {
-            return .accent
-        }
-        if dotStyle == .future {
-            return .textColor.opacity(0.15)
-        }
+        if dotStyle == .present { return .accent }
+        if dotStyle == .future { return .textColor.opacity(0.15) }
         return .textColor
     }
     
