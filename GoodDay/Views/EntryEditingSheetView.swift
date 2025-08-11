@@ -20,6 +20,18 @@ struct EntryEditingSheetView: View {
     @FocusState private var isTextEditorFocused: Bool
     @State private var showDeleteConfirmation = false
     
+    private var isToday: Bool {
+        Calendar.current.isDateInToday(date)
+    }
+    
+    private var weekdayLabel: String {
+        if isToday { return "Today" }
+        // Format to weekday (e.g. Monday, Tuesday)
+        let formatter = DateFormatter()
+        formatter.dateFormat = "EEEE"
+        return formatter.string(from: date)
+    }
+    
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             // Header with date and edit button
@@ -28,9 +40,9 @@ struct EntryEditingSheetView: View {
                     Text(date, style: .date)
                         .font(.headline)
                         .foregroundColor(.textColor)
-                    Text(date, formatter: DateFormatter.weekday)
+                    Text(weekdayLabel)
                         .font(.subheadline)
-                        .foregroundColor(.secondaryTextColor)
+                        .foregroundColor(isToday ? .accent : .secondaryTextColor)
                 }
                 
                 Spacer()
