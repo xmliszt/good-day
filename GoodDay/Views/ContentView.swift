@@ -119,7 +119,7 @@ struct ContentView: View {
                 // Floating header with blur backdrop
                 HeaderView(
                     geometry: geometry,
-                    highlightedId: highlightedId,
+                    highlightedItem: highlightedId != nil ? getItem(from: highlightedId!) : nil,
                     currentYear: currentYear,
                     viewMode: viewMode,
                     onToggleViewMode: toggleViewMode
@@ -240,7 +240,7 @@ struct ContentView: View {
         // If it was a tap, handle date selection
         if !wasTap { return }
         if let itemId = getItemId(at: value.location, for: geometry) {
-            guard let item = itemsInYear.first(where: { $0.id == itemId }) else {
+            guard let item = getItem(from: itemId) else {
                 fatalError("Unable to find item at location: \(value.location)")
             }
             selectDate(item.date)
@@ -314,6 +314,10 @@ struct ContentView: View {
         
         let item = itemsInYear[itemIndex]
         return item.id
+    }
+    
+    private func getItem(from itemId: String) -> YearGridViewItem? {
+        return itemsInYear.first { $0.id == itemId }
     }
     
     private func selectDate(_ date: Date) {

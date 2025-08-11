@@ -9,10 +9,22 @@ import SwiftUI
 
 struct HeaderView: View {
     let geometry: GeometryProxy
-    let highlightedId: String?
+    let highlightedItem: YearGridViewItem?
     let currentYear: Int
     let viewMode: ViewMode
     let onToggleViewMode: () -> Void
+    
+    private var headerText: String {
+        guard let highlightedItem else { return String(currentYear) }
+        let isHighlightedToday = Calendar.current.isDate(highlightedItem.date, inSameDayAs: Date())
+        return isHighlightedToday ? "Today": getFormattedDate(highlightedItem.date)
+    }
+    
+    private var headerColor: Color {
+        guard let highlightedItem else { return .textColor }
+        let isHighlightedToday = Calendar.current.isDate(highlightedItem.date, inSameDayAs: Date())
+        return isHighlightedToday ? .accent: .textColor
+    }
     
     var body: some View {
         VStack(spacing: 0) {
@@ -23,10 +35,10 @@ struct HeaderView: View {
             
             // Header content
             HStack {
-                Text(highlightedId != nil ? getFormattedDate(getDateFromId(highlightedId!)) : String(currentYear))
+                Text(headerText)
                     .font(.largeTitle)
-                    .fontWeight(.bold)
-                    .foregroundColor(.textColor)
+                    .fontWeight(.heavy)
+                    .foregroundColor(headerColor)
                 
                 Spacer()
                 
@@ -65,12 +77,6 @@ struct HeaderView: View {
     }
     
     // MARK: - Helper Methods
-    private func getDateFromId(_ id: String) -> Date {
-        // Convert timestamp ID back to date
-        let timeInterval = TimeInterval(Int(id) ?? 0)
-        return Date(timeIntervalSince1970: timeInterval)
-    }
-    
     private func getFormattedDate(_ date: Date) -> String {
         return date.formatted(date: .abbreviated, time: .omitted)
     }
@@ -80,7 +86,7 @@ struct HeaderView: View {
     GeometryReader { geometry in
         HeaderView(
             geometry: geometry,
-            highlightedId: nil,
+            highlightedItem: YearGridViewItem(id: "test", date: Date()),
             currentYear: 2024,
             viewMode: .now,
             onToggleViewMode: {}
