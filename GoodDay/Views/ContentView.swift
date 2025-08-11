@@ -226,6 +226,11 @@ struct ContentView: View {
         let wasTap = !hasMovedBeforeDelay && 
                      !isScrollingDisabled && 
                      (touchStartTime.map { Date().timeIntervalSince($0) < 0.2 } ?? false)
+
+        // Select date
+        if let highlightedId, let item = getItem(from: highlightedId) {
+            selectDate(item.date)
+        }
         
         // Clean up all touch-related state
         cancelDelayTimer()
@@ -278,7 +283,7 @@ struct ContentView: View {
         
         // Account for horizontal padding (matches YearGridView.padding(.horizontal, GRID_HORIZONTAL_PADDING))
         let adjustedX = location.x - GRID_HORIZONTAL_PADDING
-        let adjustedY = location.y
+        let adjustedY = location.y + spacing / 2
         
         // Use the same positioning logic as YearGridView
         let containerWidth = gridWidth - (2 * GRID_HORIZONTAL_PADDING) // Account for both sides of padding
