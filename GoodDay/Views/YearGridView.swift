@@ -37,11 +37,6 @@ struct YearGridView: View {
     let entries: [DayEntry]
     /// The id of the highlighted item
     let highlightedItemId: String?
-    /// The current touch location for ripple effect
-    var touchLocation: CGPoint?
-    /// The maximum magnifying effect influence radius (in points)
-    /// Roughly 4 layers
-    var magnifyingEffectRadius: CGFloat = 60
     
     // MARK: Private states
     /// The size of the dots (computed based on view mode)
@@ -82,22 +77,12 @@ struct YearGridView: View {
                         let col = index % dotsPerRow
                         let xPos = startX + CGFloat(col) * (itemSpacing + dotsSpacing)
                         let yPos = CGFloat(row) * (dotSize + dotsSpacing)
-                        
-                        let dotPosition = CGPoint(x: xPos, y: yPos + dotSize/2)
-                        
-                        // Calculate scale and opacity based on distance from touch point (ripple effect)
-                        let scale = calculateMagnifyingScale(
-                            dotPosition: dotPosition,
-                            touchLocation: touchLocation,
-                            isHighlighted: isHighlighted
-                        )
-                        
+                    
                         DotView(
                             size: dotSize,
                             highlighted: isHighlighted,
                             withEntry: hasEntry,
-                            dotStyle: dotStyle,
-                            scale: scale,
+                            dotStyle: dotStyle
                         )
                         // Stable identity based on date, this is important
                         // so that every single dot is morphed between mode switch
@@ -163,43 +148,6 @@ struct YearGridView: View {
         let calendar = Calendar.current
         return date < calendar.startOfDay(for: Date())
     }
-
-    /// Calculate the scale factor for a dot based on its distance from the touch point
-    private func calculateMagnifyingScale(dotPosition: CGPoint, touchLocation: CGPoint?, isHighlighted: Bool) -> CGFloat {
-        // If highlighted, max scale
-        if isHighlighted { return 2.0 }
-        
-        // No magnifying effect if in "now" mode
-        if viewMode == .now { return 1.0 }
-        
-        // If no touch location or ripple effect is disabled, return normal scale
-        guard let touchLocation = touchLocation else  { return 1.0 }
-        
-        // Calculate distance from dot to touch point
-        let distance = sqrt(
-            pow(dotPosition.x - touchLocation.x, 2) +
-            pow(dotPosition.y - touchLocation.y, 2)
-        )
-        
-        // If outside ripple radius, return normal scale
-        if distance > magnifyingEffectRadius { return 1.0 }
-        
-        // Calculate scale based on distance from touch point
-        // Closer dots get larger scale (max 1.6), farther dots get smaller scale
-        let maxScale: CGFloat = 2.0
-        let minScale: CGFloat = 1.0
-        
-        // Create the magnifying
-        // This creates a gradual decrease in scale as distance increases
-        let normalizedDistance = distance / magnifyingEffectRadius
-        
-        // Apply a sharper cutoff for faster decay
-        // Exponentially decay
-        let easedEffect = max(0, 1.0 - pow(normalizedDistance, 2.0))
-        
-        // Calculate final scale
-        return minScale + (maxScale - minScale) * easedEffect
-    }
 }
 
 // MARK: - Extensions
@@ -238,8 +186,7 @@ extension View {
                 dotsSpacing: 25,
                 items: sampleItems,
                 entries: [],
-                highlightedItemId: nil,
-                touchLocation: CGPoint(x: 100, y: 100)
+                highlightedItemId: nil
             )
             YearGridView(
                 year: currentYear,
@@ -248,8 +195,7 @@ extension View {
                 dotsSpacing: 8,
                 items: sampleItems,
                 entries: [],
-                highlightedItemId: nil,
-                touchLocation: CGPoint(x: 200, y: 150)
+                highlightedItemId: nil
             )
         }
     }

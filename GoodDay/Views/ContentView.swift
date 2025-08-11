@@ -88,8 +88,7 @@ struct ContentView: View {
                             dotsSpacing: itemsSpacing,
                             items: itemsInYear,
                             entries: entries,
-                            highlightedItemId: highlightedId,
-                            touchLocation: isDragging ? adjustTouchLocationForGrid(dragLocation) : nil
+                            highlightedItemId: highlightedId
                         )
                             .simultaneousGesture(
                                 DragGesture(minimumDistance: 0)

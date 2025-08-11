@@ -21,7 +21,10 @@ struct DotView: View {
     let highlighted: Bool
     let withEntry: Bool
     let dotStyle: DotStyle
-    let scale: CGFloat
+    
+    private var scale: CGFloat {
+        highlighted ? 2.0 : 1
+    }
     
     // MARK: Computed dot color
     private var dotColor: Color {
@@ -71,35 +74,24 @@ struct DotView: View {
         size: 12,
         highlighted: false,
         withEntry: false,
-        dotStyle: .past,
-        scale: 1.0
+        dotStyle: .past
     )
     DotView(
         size: 12,
         highlighted: false,
         withEntry: true,
         dotStyle: .past,
-        scale: 1.0
     )
     DotView(
         size: 12,
         highlighted: false,
         withEntry: false,
         dotStyle: .present,
-        scale: 1.0
     )
     DotView(
         size: 12,
         highlighted: false,
         withEntry: true,
         dotStyle: .present,
-        scale: 1.0
     )
-    // Preview with different scales for ripple effect
-    HStack(spacing: 10) {
-        DotView(size: 12, highlighted: false, withEntry: false, dotStyle: .past, scale: 1.0)
-        DotView(size: 12, highlighted: false, withEntry: false, dotStyle: .past, scale: 1.2)
-        DotView(size: 12, highlighted: false, withEntry: false, dotStyle: .past, scale: 1.4)
-        DotView(size: 12, highlighted: false, withEntry: false, dotStyle: .past, scale: 1.6)
-    }
 }
