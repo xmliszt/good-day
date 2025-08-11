@@ -88,7 +88,8 @@ struct ContentView: View {
                             dotsSpacing: itemsSpacing,
                             items: itemsInYear,
                             entries: entries,
-                            highlightedItemId: highlightedId
+                            highlightedItemId: highlightedId,
+                            touchLocation: isDragging ? adjustTouchLocationForGrid(dragLocation) : nil
                         )
                             .simultaneousGesture(
                                 DragGesture(minimumDistance: 0)
@@ -244,12 +245,14 @@ struct ContentView: View {
         
         // If it was a tap, handle date selection
         if !wasTap { return }
-        if let itemId = getItemId(at: value.location, for: geometry) {
-            guard let item = getItem(from: itemId) else {
-                fatalError("Unable to find item at location: \(value.location)")
-            }
-            selectDate(item.date)
-        }
+        guard let itemId = getItemId(at: value.location, for: geometry) else { return }
+        guard let item = getItem(from: itemId) else { return }
+        
+        selectDate(item.date)
+        
+        // Haptic feedback
+        let impactFeedback = UIImpactFeedbackGenerator(style: .light)
+        impactFeedback.impactOccurred()
     }
     
     // MARK: Utils
@@ -281,9 +284,10 @@ struct ContentView: View {
         let dotsPerRow = calculateDotsPerRow(for: geometry)
         let spacing = calculateSpacing(for: geometry, viewMode: viewMode)
         
-        // Account for horizontal padding (matches YearGridView.padding(.horizontal, GRID_HORIZONTAL_PADDING))
-        let adjustedX = location.x - GRID_HORIZONTAL_PADDING
-        let adjustedY = location.y + spacing / 2
+        // Adjust location for grid coordinates
+        let adjustedLocation = adjustTouchLocationForGrid(location)
+        let adjustedX = adjustedLocation.x
+        let adjustedY = adjustedLocation.y + spacing / 2
         
         // Use the same positioning logic as YearGridView
         let containerWidth = gridWidth - (2 * GRID_HORIZONTAL_PADDING) // Account for both sides of padding
@@ -414,6 +418,15 @@ struct ContentView: View {
     /// morph every single dot between view modes. Therefore, the grid view has height
     /// that is the sum of all dots' height, which could be longer than the screen height.
     /// Therefore, we need to calculate the scroll anchor to center the dot on the visible screen.
+    /// Adjusts the touch location from the parent coordinate system to the grid's coordinate system
+    private func adjustTouchLocationForGrid(_ location: CGPoint) -> CGPoint {
+        // Adjust for the header height and horizontal padding
+        return CGPoint(
+            x: location.x - GRID_HORIZONTAL_PADDING,
+            y: location.y
+        )
+    }
+    
     private func calculateScrollAnchor(for itemId: String, geometry: GeometryProxy) -> UnitPoint {
         // Find the item index
         guard let item = itemsInYear.first(where: { $0.id == itemId }),
