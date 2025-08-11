@@ -68,7 +68,8 @@ struct YearGridView: View {
                 ZStack(alignment: .topLeading) {
                     ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                         let dotStyle = getDotStyle(for: item.date)
-                        let hasEntry = entryForDate(item.date) != nil
+                        let entry = entryForDate(item.date)
+                        let hasEntry = entry != nil && entry!.body.isEmpty == false
                         let isHighlighted = highlightedItemId == item.id
                         let isToday = Calendar.current.isDate(item.date, inSameDayAs: Date())
                         
