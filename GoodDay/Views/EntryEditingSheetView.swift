@@ -18,6 +18,7 @@ struct EntryEditingSheetView: View {
     @Binding var isEditMode: Bool
     @Binding var editedText: String
     @FocusState private var isTextEditorFocused: Bool
+    @State private var showDeleteConfirmation = false
     
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -34,14 +35,32 @@ struct EntryEditingSheetView: View {
                 
                 Spacer()
                 
-                Button(action: toggleEditMode) {
-                    Image(systemName: isEditMode ? "checkmark" : "pencil")
-                        .font(.system(size: 18, weight: .medium))
-                        .foregroundColor(.textColor)
-                        .frame(width: 36, height: 36)
-                        .background(.controlBackgroundColor)
-                        .clipShape(Circle())
+                HStack(spacing: 8) {
+                    // Delete entry button
+                    if let entry = entry, !entry.body.isEmpty && !isEditMode {
+                        Button(action: { showDeleteConfirmation = true }) {
+                            Image(systemName: "trash")
+                                .font(.system(size: 18, weight: .medium))
+                                .foregroundColor(.red)
+                                .frame(width: 36, height: 36)
+                                .background(.controlBackgroundColor)
+                                .clipShape(Circle())
+                        }
+                        .transition(.scale.combined(with: .opacity))
+                    }
+                    
+                    // Toggle edit button
+                    Button(action: toggleEditMode) {
+                        Image(systemName: isEditMode ? "checkmark" : "pencil")
+                            .font(.system(size: 18, weight: .medium))
+                            .foregroundColor(.textColor)
+                            .frame(width: 36, height: 36)
+                            .background(.controlBackgroundColor)
+                            .clipShape(Circle())
+                    }
                 }
+                .animation(.spring(response: 0.4, dampingFraction: 0.6), value: isEditMode)
+                .animation(.spring(response: 0.4, dampingFraction: 0.6), value: entry?.body.isEmpty ?? true)
             }
             
             // Note content
@@ -75,6 +94,12 @@ struct EntryEditingSheetView: View {
             // Ensure editedText is properly initialized when sheet appears
             editedText = entry?.body ?? ""
         }
+        .confirmationDialog("Delete Note", isPresented: $showDeleteConfirmation) {
+            Button("Delete", role: .destructive, action: deleteEntry)
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("Delete this note?")
+        }
     }
     
     // MARK: - Private Methods
@@ -85,12 +110,28 @@ struct EntryEditingSheetView: View {
             isTextEditorFocused = false
 
             // Dismiss the sheet
-            dismiss()
+            DispatchQueue.main.async {
+                
+            }
         } else {
             // Auto-focus the text editor when entering edit mode
             isTextEditorFocused = true
         }
         isEditMode.toggle()
+    }
+    
+    private func deleteEntry() {
+        guard let entry else { return }
+
+        // Clear the entry's body
+        entry.body = ""
+        editedText = ""
+        
+        // Save the context to persist changes
+        try? modelContext.save()
+        
+        // Dismiss the sheet
+        dismiss()
     }
     
     private func saveNote() {
