@@ -10,21 +10,9 @@ import SwiftUI
 struct HeaderView: View {
     let geometry: GeometryProxy
     let highlightedItem: YearGridViewItem?
-    let currentYear: Int
+    @Binding var selectedYear: Int
     let viewMode: ViewMode
     let onToggleViewMode: () -> Void
-    
-    private var headerText: String {
-        guard let highlightedItem else { return String(currentYear) }
-        let isHighlightedToday = Calendar.current.isDate(highlightedItem.date, inSameDayAs: Date())
-        return isHighlightedToday ? "Today": getFormattedDate(highlightedItem.date)
-    }
-    
-    private var headerColor: Color {
-        guard let highlightedItem else { return .textColor }
-        let isHighlightedToday = Calendar.current.isDate(highlightedItem.date, inSameDayAs: Date())
-        return isHighlightedToday ? .accent: .textColor
-    }
     
     var body: some View {
         VStack(spacing: 0) {
@@ -35,10 +23,10 @@ struct HeaderView: View {
             
             // Header content
             HStack {
-                Text(headerText)
-                    .font(.largeTitle)
-                    .fontWeight(.heavy)
-                    .foregroundColor(headerColor)
+                YearSelectorView(
+                    highlightedItem: highlightedItem,
+                    selectedYear: $selectedYear
+                )
                 
                 Spacer()
                 
@@ -75,22 +63,21 @@ struct HeaderView: View {
         )
         .ignoresSafeArea(edges: .top)
     }
-    
-    // MARK: - Helper Methods
-    private func getFormattedDate(_ date: Date) -> String {
-        return date.formatted(date: .abbreviated, time: .omitted)
-    }
+
 }
 
 #Preview {
+    @Previewable @State var selectedYear = 2024
+    
     GeometryReader { geometry in
         HeaderView(
             geometry: geometry,
             highlightedItem: YearGridViewItem(id: "test", date: Date()),
-            currentYear: 2024,
+            selectedYear: $selectedYear,
             viewMode: .now,
             onToggleViewMode: {}
         )
     }
     .frame(height: 200)
+    .modelContainer(for: DayEntry.self, inMemory: true)
 }

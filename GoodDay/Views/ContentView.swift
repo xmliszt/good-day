@@ -36,14 +36,14 @@ struct ContentView: View {
     @State private var delayTimer: Timer?
     @State private var initialTouchItemId: String?
     
-    private let currentYear = Calendar.current.component(.year, from: Date())
+    @State private var selectedYear = Calendar.current.component(.year, from: Date())
     private let headerHeight: CGFloat = 100.0
     
     // MARK: Computed
     /// Flattened array of items to be displayed in the year grid.
     private var itemsInYear: [YearGridViewItem] {
         let calendar = Calendar.current
-        let startOfYear = calendar.date(from: DateComponents(year: currentYear, month: 1, day: 1))!
+        let startOfYear = calendar.date(from: DateComponents(year: selectedYear, month: 1, day: 1))!
         let daysCount = daysInYear
         
         return (0..<daysCount).map { dayOffset in
@@ -82,7 +82,7 @@ struct ContentView: View {
                             .id("topSpacer")
                         
                         YearGridView(
-                            year: currentYear,
+                            year: selectedYear,
                             viewMode: viewMode,
                             dotsPerRow: dotsPerRow,
                             dotsSpacing: itemsSpacing,
@@ -104,15 +104,19 @@ struct ContentView: View {
                     .background(.backgroundColor)
                     // When view mode change, scroll to today's dot
                     .onChange(of: viewMode) {
-                        scrollToTodayCenter(scrollProxy: scrollProxy, geometry: geometry)
+                        scrollToRelevantDate(scrollProxy: scrollProxy, geometry: geometry)
+                    }
+                    // When year changes, scroll to relevant date
+                    .onChange(of: selectedYear) {
+                        scrollToRelevantDate(scrollProxy: scrollProxy, geometry: geometry)
                     }
                     // Initial scroll to today's dot for both modes
                     .onAppear {
-                        scrollToTodayCenter(scrollProxy: scrollProxy, geometry: geometry)
+                        scrollToRelevantDate(scrollProxy: scrollProxy, geometry: geometry)
                     }
                     // When device orientation changes, scroll to today's dot
                     .onRotate {_ in 
-                        scrollToTodayCenter(scrollProxy: scrollProxy, geometry: geometry)
+                        scrollToRelevantDate(scrollProxy: scrollProxy, geometry: geometry)
                     }
                 }
                 
@@ -120,7 +124,7 @@ struct ContentView: View {
                 HeaderView(
                     geometry: geometry,
                     highlightedItem: highlightedId != nil ? getItem(from: highlightedId!) : nil,
-                    currentYear: currentYear,
+                    selectedYear: $selectedYear,
                     viewMode: viewMode,
                     onToggleViewMode: toggleViewMode
                 )
@@ -142,11 +146,11 @@ struct ContentView: View {
     
 
 
-    /// Number of days in the current year
+    /// Number of days in the selected year
     private var daysInYear: Int {
         let calendar = Calendar.current
-        let startOfYear = calendar.date(from: DateComponents(year: currentYear, month: 1, day: 1))!
-        let startOfNextYear = calendar.date(from: DateComponents(year: currentYear + 1, month: 1, day: 1))!
+        let startOfYear = calendar.date(from: DateComponents(year: selectedYear, month: 1, day: 1))!
+        let startOfNextYear = calendar.date(from: DateComponents(year: selectedYear + 1, month: 1, day: 1))!
         return calendar.dateComponents([.day], from: startOfYear, to: startOfNextYear).day!
     }
     
@@ -376,14 +380,21 @@ struct ContentView: View {
     }
     
     // MARK: Layout Calculations
-    /// Scrolls to center today's dot with animation
-    private func scrollToTodayCenter(scrollProxy: ScrollViewProxy, geometry: GeometryProxy) {
+    /// Scrolls to center the most relevant date (today if in selected year, otherwise first day of year)
+    private func scrollToRelevantDate(scrollProxy: ScrollViewProxy, geometry: GeometryProxy) {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
-            let todayId = getTodayItemId()
+            let currentYear = Calendar.current.component(.year, from: Date())
+            
             withAnimation(.easeInOut) {
-                // Calculate proper scroll position to center dot on visible screen
-                let anchor = calculateScrollAnchor(for: todayId, geometry: geometry)
-                scrollProxy.scrollTo(todayId, anchor: anchor)
+                if selectedYear != currentYear {
+                    // For non-current years, scroll to the top spacer to show first row properly
+                    scrollProxy.scrollTo("topSpacer", anchor: .top)
+                } else {
+                    // For current year, scroll to today with proper centering
+                    let targetId = getRelevantDateId()
+                    let anchor = calculateScrollAnchor(for: targetId, geometry: geometry)
+                    scrollProxy.scrollTo(targetId, anchor: anchor)
+                }
             }
         }
     }
@@ -399,17 +410,21 @@ struct ContentView: View {
         return date.formatted(date: .abbreviated, time: .omitted)
     }
     
-    /// Get the item ID for today's date
-    private func getTodayItemId() -> String {
+    /// Get the item ID for the most relevant date (today if in selected year, otherwise first day of year)
+    private func getRelevantDateId() -> String {
         let today = Date()
         let calendar = Calendar.current
+        let currentYear = calendar.component(.year, from: today)
         
-        guard let todayItem = itemsInYear.first(where: { calendar.isDate($0.date, inSameDayAs: today) }) else {
-            // Fallback to first item if today is not found
-            return itemsInYear.first?.id ?? ""
+        // If we're viewing the current year, try to scroll to today
+        if selectedYear == currentYear {
+            if let todayItem = itemsInYear.first(where: { calendar.isDate($0.date, inSameDayAs: today) }) {
+                return todayItem.id
+            }
         }
         
-        return todayItem.id
+        // Otherwise, scroll to the first day of the selected year
+        return itemsInYear.first?.id ?? ""
     }
     
     /// Calculate the proper scroll anchor to center a dot on the visible screen
@@ -430,10 +445,10 @@ struct ContentView: View {
         // Find the item index
         guard let item = itemsInYear.first(where: { $0.id == itemId }),
               let itemIndex = itemsInYear.firstIndex(where: { $0.id == item.id }) else {
-            return .center
+            return .top
         }
         
-        // Calculate grid layout parameters
+        // Calculate proper anchor to center the dot on screen (only used for current year)
         let dotsPerRow = calculateDotsPerRow(for: geometry)
         let spacing = calculateSpacing(for: geometry, viewMode: viewMode)
         
