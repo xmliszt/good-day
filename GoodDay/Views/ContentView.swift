@@ -39,6 +39,11 @@ struct ContentView: View {
     @State private var selectedYear = Calendar.current.component(.year, from: Date())
     private let headerHeight: CGFloat = 100.0
     
+    // Pinch gesture states
+    private let scaleThreshold: CGFloat = 0.8 // Threshold for detecting significant pinch
+    private let expandThreshold: CGFloat = 1.2 // Threshold for detecting significant expand
+    @State private var isPinching = false
+    
     // MARK: Computed
     /// Flattened array of items to be displayed in the year grid.
     private var itemsInYear: [YearGridViewItem] {
@@ -92,15 +97,16 @@ struct ContentView: View {
                         )
                             .simultaneousGesture(
                                 DragGesture(minimumDistance: 0)
-                                    .onChanged { value in
-                                        handleDragChanged(value: value, geometry: geometry)
-                                    }
-                                    .onEnded { value in
-                                        handleDragEnded(value: value, geometry: geometry)
-                                    }
+                                    .onChanged { handleDragChanged(value: $0, geometry: geometry) }
+                                    .onEnded { handleDragEnded(value: $0, geometry: geometry) }
+                            )
+                            .simultaneousGesture(
+                                MagnificationGesture()
+                                    .onChanged { handlePinchChanged(value: $0) }
+                                    .onEnded { handlePinchEnded(value: $0) }
                             )
                     }
-                    .scrollDisabled(isScrollingDisabled)
+                    .scrollDisabled(isScrollingDisabled || isPinching)
                     .background(.backgroundColor)
                     // When view mode change, scroll to today's dot
                     .onChange(of: viewMode) {
@@ -173,6 +179,9 @@ struct ContentView: View {
     
     // MARK: User interactions
     private func handleDragChanged(value: DragGesture.Value, geometry: GeometryProxy) {
+        // Don't process drag gestures while pinching
+        if isPinching { return }
+        
         dragLocation = value.location
         
         // Check if this is the start of a drag gesture
@@ -226,6 +235,9 @@ struct ContentView: View {
     }
     
     private func handleDragEnded(value: DragGesture.Value, geometry: GeometryProxy) {
+        // Don't process drag gestures while pinching
+        if isPinching { return }
+        
         // Check if this was a tap (no movement and very short duration)
         let wasTap = !hasMovedBeforeDelay && 
                      !isScrollingDisabled && 
@@ -257,6 +269,36 @@ struct ContentView: View {
         let impactFeedback = UIImpactFeedbackGenerator(style: .light)
         impactFeedback.impactOccurred()
     }
+    
+    private func handlePinchChanged(value: MagnificationGesture.Value) {
+        if isPinching { return }
+
+        isPinching = true
+
+        // Clean up any ongoing drag gesture state when pinch begins
+        highlightedId = nil
+        isScrollingDisabled = false
+        cancelDelayTimer()
+        isInDelayPeriod = false
+        hasMovedBeforeDelay = false
+        isDragging = false
+    }
+    
+    private func handlePinchEnded(value: MagnificationGesture.Value) {
+        isPinching = false
+        highlightedId = nil
+        isScrollingDisabled = false
+        
+        // Pinch in: switch from "now" to "year" mode
+        if value < scaleThreshold && viewMode == .now {
+            toggleViewMode(to: .year)
+        }
+        // Pinch out: switch from "year" to "now" mode
+        else if value > expandThreshold && viewMode == .year {
+            toggleViewMode(to: .now)
+        }
+    }
+    
     
     // MARK: Utils
     /// Number of dots per row in the grid
@@ -342,10 +384,19 @@ struct ContentView: View {
         })?.body ?? ""
     }
     
+    /// Toggle the view mode between current modes
     private func toggleViewMode() {
         // Use a spring animation for morphing effect
         withAnimation(.spring(response: 0.6, dampingFraction: 0.8, blendDuration: 0.1)) {
             viewMode = viewMode == .now ? .year : .now
+        }
+    }
+    
+    /// Toggle the view mode to a specific mode
+    private func toggleViewMode(to newViewMode: ViewMode) {
+        // Use a spring animation for morphing effect
+        withAnimation(.spring(response: 0.6, dampingFraction: 0.8, blendDuration: 0.1)) {
+            viewMode = newViewMode
         }
     }
     
