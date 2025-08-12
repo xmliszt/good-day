@@ -109,10 +109,14 @@ struct EntryEditingSheetView: View {
             return "in \(days) days"
         }
         
+        if days == 1 {
+            return "in 1 day"
+        }
+        
         // Same day or next day with less than 24 hours: show hours, minutes, seconds
-        if days == 1 || (days == 0 && (hours > 0 || minutes > 0 || seconds > 0)) {
+        if days == 0 && (hours > 0 || minutes > 0 || seconds > 0) {
             var parts: [String] = []
-            
+
             if hours > 0 {
                 if hours == 1 {
                     parts.append("1h")
@@ -127,6 +131,12 @@ struct EntryEditingSheetView: View {
                 } else {
                     parts.append("\(minutes)m")
                 }
+            }
+            
+            // More than 1 hour, as we only update time per minute,
+            // we show only minutes
+            if hours >= 1 {
+                return "in " + parts.joined(separator: " ")
             }
             
             if seconds > 0 {
