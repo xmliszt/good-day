@@ -139,6 +139,9 @@ struct ContentView: View {
                 )
             }
             .background(.backgroundColor)
+            .onShake {
+                handleShakeGesture()
+            }
         }
         .sheet(item: $selectedDate) { date in
             let entry = entries.first(where: { $0.createdAt == date.date})
@@ -403,6 +406,21 @@ struct ContentView: View {
         }
     }
     
+    // MARK: - Shake Gesture Handler
+    private func handleShakeGesture() {
+        let currentYear = Calendar.current.component(.year, from: Date())
+        
+        // Haptic feedback for shake action
+        let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
+        impactFeedback.impactOccurred()
+        
+        // Set to current year and scroll to today
+        withAnimation(.spring(response: 0.8, dampingFraction: 0.7, blendDuration: 0.1)) {
+            selectedYear = currentYear
+            viewMode = .now // Switch to "now" mode for better visibility
+        }
+    }
+    
     // MARK: - Touch Delay Timer Methods
     private func startDelayTimer() {
         // Cancel any existing timer
@@ -547,6 +565,41 @@ struct DeviceRotationViewModifier: ViewModifier {
 extension View {
     func onRotate(perform action: @escaping (UIDeviceOrientation) -> Void) -> some View {
         self.modifier(DeviceRotationViewModifier(action: action))
+    }
+}
+
+// MARK: - Shake Detection
+/// Custom view modifier to detect shake gestures
+struct ShakeDetectionViewModifier: ViewModifier {
+    let action: () -> Void
+    
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .deviceDidShake)) { _ in
+                action()
+            }
+    }
+}
+
+/// View extension to make shake detection easier to use
+extension View {
+    func onShake(perform action: @escaping () -> Void) -> some View {
+        self.modifier(ShakeDetectionViewModifier(action: action))
+    }
+}
+
+/// Custom notification for shake detection
+extension Notification.Name {
+    static let deviceDidShake = Notification.Name("deviceDidShake")
+}
+
+/// UIWindow extension to detect shake motion
+extension UIWindow {
+    open override func motionEnded(_ motion: UIEvent.EventSubtype, with event: UIEvent?) {
+        if motion == .motionShake {
+            NotificationCenter.default.post(name: .deviceDidShake, object: nil)
+        }
+        super.motionEnded(motion, with: event)
     }
 }
 
