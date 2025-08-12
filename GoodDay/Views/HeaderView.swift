@@ -66,14 +66,15 @@ struct HeaderView: View {
 
 #Preview {
     @Previewable @State var selectedYear = 2024
+    @Previewable @State var viewMode: ViewMode = .now
     
     GeometryReader { geometry in
         HeaderView(
             geometry: geometry,
             highlightedItem: YearGridViewItem(id: "test", date: Date()),
             selectedYear: $selectedYear,
-            viewMode: .now,
-            onToggleViewMode: {},
+            viewMode: viewMode,
+            onToggleViewMode: { viewMode = viewMode == .now ? .year : .now },
             onSettingsAction: {}
         )
     }

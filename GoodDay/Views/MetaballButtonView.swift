@@ -51,7 +51,6 @@ struct MetaballButtonView: View {
             }
             // ✨ The Magic Modifiers ✨
             .drawingGroup() // 1. Render shapes into an offscreen buffer
-            .blur(radius: 1)    // 2. Blur them to create the "goo"
             .contrast(1)     // 3. Sharpen the edges with high contrast
             .foregroundStyle(.controlBackgroundColor) // Use the app's control background color
             .animation(animation, value: buttonMode) // Animate the whole effect
@@ -80,7 +79,7 @@ struct MetaballButtonView: View {
             .foregroundColor(.textColor)
             .frame(maxWidth: .infinity, alignment: .trailing)
         }
-        .frame(width: buttonSize * 2 + spacing, height: buttonSize)
+        .frame(width: buttonSize * 2 + spacing * 3, height: buttonSize)
     }
 }
 
