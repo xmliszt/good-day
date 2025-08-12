@@ -13,6 +13,7 @@ struct HeaderView: View {
     @Binding var selectedYear: Int
     let viewMode: ViewMode
     let onToggleViewMode: () -> Void
+    let onSettingsAction: () -> Void
     
     var body: some View {
         VStack(spacing: 0) {
@@ -29,16 +30,13 @@ struct HeaderView: View {
                 )
                 
                 Spacer()
-                
-                // View mode toggle button
-                Button(action: onToggleViewMode) {
-                    Image(systemName: viewMode == .now ? "calendar" : "dot.circle")
-                        .font(.system(size: 18, weight: .medium))
-                        .foregroundColor(.textColor)
-                        .frame(width: 36, height: 36)
-                        .background(.controlBackgroundColor)
-                        .clipShape(Circle())
-                }
+  
+                // Metaball morphing buttons
+                MetaballButtonView(
+                    viewMode: viewMode,
+                    onToggleViewMode: onToggleViewMode,
+                    onSettingsAction: onSettingsAction
+                )
             }
             .padding(.horizontal, 20)
             .padding(.top, 20)
@@ -75,7 +73,8 @@ struct HeaderView: View {
             highlightedItem: YearGridViewItem(id: "test", date: Date()),
             selectedYear: $selectedYear,
             viewMode: .now,
-            onToggleViewMode: {}
+            onToggleViewMode: {},
+            onSettingsAction: {}
         )
     }
     .frame(height: 200)

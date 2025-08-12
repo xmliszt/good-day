@@ -132,7 +132,10 @@ struct ContentView: View {
                     highlightedItem: highlightedId != nil ? getItem(from: highlightedId!) : nil,
                     selectedYear: $selectedYear,
                     viewMode: viewMode,
-                    onToggleViewMode: toggleViewMode
+                    onToggleViewMode: toggleViewMode,
+                    onSettingsAction: {
+                        print("Settings tapped")
+                    }
                 )
             }
             .background(.backgroundColor)
