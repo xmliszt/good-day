@@ -34,6 +34,14 @@ struct DotView: View {
         return .textColor
     }
     
+    private var ringColor: Color {
+        // Override base color if it is a present dot.
+        if dotStyle == .present { return .accent }
+        if dotStyle == .future && !withEntry { return .textColor.opacity(0.15) }
+        if dotStyle == .future && withEntry { return .accent }
+        return .textColor
+    }
+    
     // MARK: view
     var body: some View {
         ZStack {
@@ -53,7 +61,7 @@ struct DotView: View {
             // Ring for entries - positioned absolutely
             if withEntry {
                 Circle()
-                    .stroke(dotColor, lineWidth: size * 0.15)
+                    .stroke(ringColor, lineWidth: size * 0.15)
                     .frame(width: size * 1.5, height: size * 1.5)
                     .scaleEffect(scale)
                     .animation(.spring(response: 0.4, dampingFraction: 0.6), value: highlighted)

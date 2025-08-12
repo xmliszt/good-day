@@ -24,12 +24,91 @@ struct EntryEditingSheetView: View {
         Calendar.current.isDateInToday(date)
     }
     
+    private var isFuture: Bool {
+        date > Date()
+    }
+    
     private var weekdayLabel: String {
         if isToday { return "Today" }
         // Format to weekday (e.g. Monday, Tuesday)
         let formatter = DateFormatter()
         formatter.dateFormat = "EEEE"
         return formatter.string(from: date)
+    }
+    
+    /// Show count down text for future entry with body
+    private var countdownText: String? {
+        guard isFuture else { return nil }
+        guard entry != nil && !entry!.body.isEmpty else { return nil }
+        
+        let calendar = Calendar.current
+        let now = Date()
+        let components = calendar.dateComponents([.year, .month, .day], from: now, to: date)
+        
+        guard let years = components.year,
+              let months = components.month,
+              let days = components.day else { return nil }
+        
+        // More than a year: show year + month + day
+        if years > 0 {
+            var parts: [String] = []
+            
+            if years == 1 {
+                parts.append("1 year")
+            } else {
+                parts.append("\(years) years")
+            }
+            
+            if months > 0 {
+                if months == 1 {
+                    parts.append("1 month")
+                } else {
+                    parts.append("\(months) months")
+                }
+            }
+            
+            if days > 0 {
+                if days == 1 {
+                    parts.append("1 day")
+                } else {
+                    parts.append("\(days) days")
+                }
+            }
+            
+            return "in " + parts.joined(separator: ", ")
+        }
+        
+        // More than a month but less than a year: show month + day
+        if months > 0 {
+            var parts: [String] = []
+            
+            if months == 1 {
+                parts.append("1 month")
+            } else {
+                parts.append("\(months) months")
+            }
+            
+            if days > 0 {
+                if days == 1 {
+                    parts.append("1 day")
+                } else {
+                    parts.append("\(days) days")
+                }
+            }
+            
+            return "in " + parts.joined(separator: ", ")
+        }
+        
+        // Less than a month: show days only
+        if days > 0 {
+            if days == 1 {
+                return "in 1 day"
+            } else {
+                return "in \(days) days"
+            }
+        }
+        
+        return nil
     }
     
     var body: some View {
@@ -40,9 +119,17 @@ struct EntryEditingSheetView: View {
                     Text(date, style: .date)
                         .font(.headline)
                         .foregroundColor(.textColor)
-                    Text(weekdayLabel)
-                        .font(.subheadline)
-                        .foregroundColor(isToday ? .accent : .secondaryTextColor)
+                    HStack(spacing: 8) {
+                        Text(weekdayLabel)
+                            .font(.subheadline)
+                            .foregroundColor(isToday ? .accent : .secondaryTextColor)
+                        
+                        if let countdown = countdownText {
+                            Text(countdown)
+                                .font(.subheadline)
+                                .foregroundColor(.accent.opacity(0.7))
+                        }
+                    }
                 }
                 
                 Spacer()
