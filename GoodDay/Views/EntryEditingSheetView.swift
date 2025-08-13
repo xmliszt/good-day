@@ -362,14 +362,6 @@ struct EntryEditingSheetView: View {
     }
 }
 
-extension DateFormatter {
-    static let weekday: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "EEEE"
-        return formatter
-    }()
-}
-
 #Preview {
     @Previewable @State var isEditMode = false
     @Previewable @State var editedText: String = ""

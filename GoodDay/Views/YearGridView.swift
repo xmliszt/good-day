@@ -10,11 +10,6 @@ import SwiftUI
 // MARK: - Constants
 let GRID_HORIZONTAL_PADDING: CGFloat = 40
 
-enum ViewMode {
-    case now
-    case year
-}
-
 struct YearGridViewItem: Identifiable {
     var id: String
     var date: Date
@@ -147,18 +142,6 @@ struct YearGridView: View {
     private func isPastDay(for date: Date) -> Bool {
         let calendar = Calendar.current
         return date < calendar.startOfDay(for: Date())
-    }
-}
-
-// MARK: - Extensions
-extension View {
-    @ViewBuilder
-    func `if`<Content: View>(_ condition: Bool, transform: (Self) -> Content) -> some View {
-        if condition {
-            transform(self)
-        } else {
-            self
-        }
     }
 }
 

@@ -10,6 +10,8 @@ import SwiftData
 
 @main
 struct GoodDayApp: App {
+    @State private var colorScheme: ColorScheme? = UserPreferences.shared.preferredColorScheme
+    
     var sharedModelContainer: ModelContainer = {
         
         // 1. Define schemas
@@ -33,8 +35,25 @@ struct GoodDayApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            NavigationStack {
+                ContentView()
+                    .environment(UserPreferences.shared)
+                    .preferredColorScheme(colorScheme)
+                    .onAppear {
+                        setupColorSchemeObserver()
+                    }
+            }
         }
         .modelContainer(sharedModelContainer)
+    }
+    
+    private func setupColorSchemeObserver() {
+        NotificationCenter.default.addObserver(
+            forName: .didChangeColorScheme,
+            object: nil,
+            queue: .main
+        ) { [self] _ in
+            colorScheme = UserPreferences.shared.preferredColorScheme
+        }
     }
 }

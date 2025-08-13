@@ -16,6 +16,7 @@ struct IdentifiableDate: Identifiable, Equatable {
 struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(UserPreferences.self) private var userPreferences
     
     @Query private var entries: [DayEntry]
     
@@ -26,7 +27,7 @@ struct ContentView: View {
     @State private var isDragging = false
     @State private var highlightedId: String?
     @State private var isScrollingDisabled = false
-    @State private var viewMode: ViewMode = .now // Default to "now" mode
+    @State private var viewMode: ViewMode = UserPreferences.shared.defaultViewMode
     
     // Touch delay detection states
     @State private var touchStartTime: Date?
@@ -37,6 +38,7 @@ struct ContentView: View {
     @State private var initialTouchItemId: String?
     
     @State private var selectedYear = Calendar.current.component(.year, from: Date())
+    @State private var navigateToSettings = false
     private let headerHeight: CGFloat = 100.0
     
     // Pinch gesture states
@@ -134,7 +136,7 @@ struct ContentView: View {
                     viewMode: viewMode,
                     onToggleViewMode: toggleViewMode,
                     onSettingsAction: {
-                        print("Settings tapped")
+                        navigateToSettings = true
                     }
                 )
             }
@@ -153,6 +155,10 @@ struct ContentView: View {
             )
             .presentationDetents([.fraction(0.5)])
             .presentationDragIndicator(.visible)
+        }
+        .navigationDestination(isPresented: $navigateToSettings) {
+            SettingsView()
+                .environment(userPreferences)
         }
     }
     
@@ -173,7 +179,7 @@ struct ContentView: View {
         // Ensure we have at least one space between dots
         guard dotsPerRow > 1 else { return 0 }
         
-        let gridWidth = geometry.size.width
+        let gridWidth = geometry.size.width - (2 * GRID_HORIZONTAL_PADDING)
         let totalDotsWidth = dotSize * CGFloat(dotsPerRow)
         let availableSpace = gridWidth - totalDotsWidth
         let spacing = availableSpace / CGFloat(dotsPerRow - 1)
@@ -230,10 +236,7 @@ struct ContentView: View {
             
             // Haptic feedback when selection changes between dots
             // Only feedback when the highlighted id changes
-            if newHighlightedId != highlightedId {
-                let impactFeedback = UIImpactFeedbackGenerator(style: .light)
-                impactFeedback.impactOccurred()
-            }
+            if newHighlightedId != highlightedId { Haptic.play() }
             
             // Update highlightedId
             highlightedId = newHighlightedId
@@ -272,8 +275,7 @@ struct ContentView: View {
         selectDate(item.date)
         
         // Haptic feedback
-        let impactFeedback = UIImpactFeedbackGenerator(style: .light)
-        impactFeedback.impactOccurred()
+        Haptic.play()
     }
     
     private func handlePinchChanged(value: MagnificationGesture.Value) {
@@ -313,17 +315,7 @@ struct ContentView: View {
         case .now:
             return 7
         case .year:
-            let gridWidth = geometry.size.width
-            let dotSize: CGFloat = 8 // Fixed dot size for year mode
-            let minSpacing: CGFloat = 16 // Minimum spacing between dots in year mode
-            
-            // Calculate maximum number of dots that can fit in a row with safety margin
-            // Subtract some width to ensure dots don't overflow
-            let safeGridWidth = gridWidth * 0.95 // 5% safety margin
-            let maxDotsPerRow = Int((safeGridWidth + minSpacing) / (dotSize + minSpacing))
-            
-            // Ensure we have at least 7 dots per row (minimum)
-            return max(7, min(maxDotsPerRow, 25)) // Cap at 25 dots per row for readability and to prevent overflow
+            return 16
         }
     }
     
@@ -403,6 +395,8 @@ struct ContentView: View {
         // Use a spring animation for morphing effect
         withAnimation(.spring(response: 0.6, dampingFraction: 0.8, blendDuration: 0.1)) {
             viewMode = newViewMode
+            // Save the new view mode as the user's preference
+            userPreferences.defaultViewMode = newViewMode
         }
     }
     
@@ -411,8 +405,7 @@ struct ContentView: View {
         let currentYear = Calendar.current.component(.year, from: Date())
         
         // Haptic feedback for shake action
-        let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
-        impactFeedback.impactOccurred()
+        Haptic.play(with: .medium)
         
         // Set to current year and scroll to today
         withAnimation(.spring(response: 0.8, dampingFraction: 0.7, blendDuration: 0.1)) {
@@ -440,8 +433,7 @@ struct ContentView: View {
                 }
                 
                 // Provide haptic feedback to indicate mode switch
-                let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
-                impactFeedback.impactOccurred()
+                Haptic.play(with: .medium)
             }
         }
     }
@@ -454,6 +446,9 @@ struct ContentView: View {
     // MARK: Layout Calculations
     /// Scrolls to center the most relevant date (today if in selected year, otherwise first day of year)
     private func scrollToRelevantDate(scrollProxy: ScrollViewProxy, geometry: GeometryProxy) {
+        // Only auto-scroll if the preference is enabled
+        guard userPreferences.autoScrollToToday else { return }
+        
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
             let currentYear = Calendar.current.component(.year, from: Date())
             
@@ -545,62 +540,6 @@ struct ContentView: View {
     }
     
 
-}
-
-// MARK: - Device Rotation Detection
-/// Custom view modifier to track device rotation and call our action
-struct DeviceRotationViewModifier: ViewModifier {
-    let action: (UIDeviceOrientation) -> Void
-
-    func body(content: Content) -> some View {
-        content
-            .onAppear()
-            .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
-                action(UIDevice.current.orientation)
-            }
-    }
-}
-
-/// View extension to make the rotation detection modifier easier to use
-extension View {
-    func onRotate(perform action: @escaping (UIDeviceOrientation) -> Void) -> some View {
-        self.modifier(DeviceRotationViewModifier(action: action))
-    }
-}
-
-// MARK: - Shake Detection
-/// Custom view modifier to detect shake gestures
-struct ShakeDetectionViewModifier: ViewModifier {
-    let action: () -> Void
-    
-    func body(content: Content) -> some View {
-        content
-            .onReceive(NotificationCenter.default.publisher(for: .deviceDidShake)) { _ in
-                action()
-            }
-    }
-}
-
-/// View extension to make shake detection easier to use
-extension View {
-    func onShake(perform action: @escaping () -> Void) -> some View {
-        self.modifier(ShakeDetectionViewModifier(action: action))
-    }
-}
-
-/// Custom notification for shake detection
-extension Notification.Name {
-    static let deviceDidShake = Notification.Name("deviceDidShake")
-}
-
-/// UIWindow extension to detect shake motion
-extension UIWindow {
-    open override func motionEnded(_ motion: UIEvent.EventSubtype, with event: UIEvent?) {
-        if motion == .motionShake {
-            NotificationCenter.default.post(name: .deviceDidShake, object: nil)
-        }
-        super.motionEnded(motion, with: event)
-    }
 }
 
 #Preview {

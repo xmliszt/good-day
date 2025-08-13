@@ -7,12 +7,6 @@
 
 import SwiftUI
 
-// Enum to represent the state of the button
-enum MetaballButtonMode {
-    case single
-    case expanded
-}
-
 struct MetaballButtonView: View {
     // External bindings for integration with HeaderView
     let viewMode: ViewMode

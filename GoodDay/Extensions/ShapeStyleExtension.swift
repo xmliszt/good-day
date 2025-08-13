@@ -1,11 +1,12 @@
 //
-//  ColorUtility.swift
+//  ShapeStyle.swift
 //  GoodDay
 //
-//  Created by Li Yuxuan on 10/8/25.
+//  Created by Li Yuxuan on 14/8/25.
 //
 
 import SwiftUI
+
 
 /// ShapeStyle extension providing consistent dynamic colors across the app
 extension ShapeStyle where Self == Color {

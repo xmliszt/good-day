@@ -7,12 +7,6 @@
 
 import SwiftUI
 
-enum DotStyle {
-    case past
-    case present
-    case future
-}
-
 struct DotView: View {
     @Environment(\.colorScheme) private var colorScheme
     
