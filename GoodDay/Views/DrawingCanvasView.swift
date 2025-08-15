@@ -19,6 +19,7 @@ struct DrawingCanvasView: View {
     @State private var paths: [Path] = []
     @State private var showClearConfirmation = false
     @State private var currentEntry: DayEntry?
+    @State private var isDrawing = false
     
     // Undo/Redo state management
     @State private var undoStack: [[Path]] = []
@@ -97,28 +98,41 @@ struct DrawingCanvasView: View {
                     Canvas { context, size in
                         // Draw all completed paths
                         for path in paths {
-                            context.stroke(
-                                path, 
-                                with: .color(.accent), 
-                                style: StrokeStyle(
-                                    lineWidth: DRAWING_LINE_WIDTH,
-                                    lineCap: .round,
-                                    lineJoin: .round
+                            // Check if this path contains an ellipse (dot)
+                            if isEllipsePath(path) {
+                                // Fill ellipse paths (dots)
+                                context.fill(path, with: .color(.accent))
+                            } else {
+                                // Stroke line paths
+                                context.stroke(
+                                    path, 
+                                    with: .color(.accent), 
+                                    style: StrokeStyle(
+                                        lineWidth: DRAWING_LINE_WIDTH,
+                                        lineCap: .round,
+                                        lineJoin: .round
+                                    )
                                 )
-                            )
+                            }
                         }
                         
                         // Draw current path being drawn
                         if !currentPath.isEmpty {
-                            context.stroke(
-                                currentPath, 
-                                with: .color(.accent), 
-                                style: StrokeStyle(
-                                    lineWidth: DRAWING_LINE_WIDTH,
-                                    lineCap: .round,
-                                    lineJoin: .round
+                            if isEllipsePath(currentPath) {
+                                // Fill ellipse paths (dots)
+                                context.fill(currentPath, with: .color(.accent))
+                            } else {
+                                // Stroke line paths
+                                context.stroke(
+                                    currentPath, 
+                                    with: .color(.accent), 
+                                    style: StrokeStyle(
+                                        lineWidth: DRAWING_LINE_WIDTH,
+                                        lineCap: .round,
+                                        lineJoin: .round
+                                    )
                                 )
-                            )
+                            }
                         }
                     }
                     .frame(width: CANVAS_SIZE, height: CANVAS_SIZE)
@@ -127,31 +141,54 @@ struct DrawingCanvasView: View {
                         DragGesture(minimumDistance: 0)
                             .onChanged { value in
                                 let point = value.location
+                                let isInBounds = point.x >= 0 && point.x <= CANVAS_SIZE &&
+                                               point.y >= 0 && point.y <= CANVAS_SIZE
                                 
-                                // Ensure the point is within canvas bounds
-                                guard point.x >= 0 && point.x <= CANVAS_SIZE &&
-                                      point.y >= 0 && point.y <= CANVAS_SIZE else { return }
-                                
-                                if currentPath.isEmpty {
-                                    currentPath.move(to: point)
+                                if isInBounds {
+                                    // Point is within bounds
+                                    if !isDrawing {
+                                        // Starting a new stroke
+                                        isDrawing = true
+                                        currentPath.move(to: point)
+                                    } else {
+                                        // Continue current stroke
+                                        currentPath.addLine(to: point)
+                                    }
                                 } else {
-                                    currentPath.addLine(to: point)
+                                    // Point is out of bounds
+                                    if isDrawing && !currentPath.isEmpty {
+                                        // Commit the current stroke when going out of bounds
+                                        commitCurrentStroke()
+                                    }
                                 }
                             }
-                            .onEnded { _ in
-                                if !currentPath.isEmpty {
-                                    // Save current state to undo stack before making changes
-                                    saveStateToUndoStack()
+                            .onEnded { value in
+                                if isDrawing && !currentPath.isEmpty {
+                                    let point = value.location
+                                    let startLocation = value.startLocation
+                                    let distance = sqrt(pow(point.x - startLocation.x, 2) + pow(point.y - startLocation.y, 2))
                                     
-                                    paths.append(currentPath)
-                                    currentPath = Path()
+                                    // Check if this was a single tap within bounds
+                                    if distance < 3.0 && 
+                                       point.x >= 0 && point.x <= CANVAS_SIZE &&
+                                       point.y >= 0 && point.y <= CANVAS_SIZE {
+                                        // Create a small circle for the dot
+                                        currentPath = Path()
+                                        let dotRadius = DRAWING_LINE_WIDTH / 2
+                                        currentPath.addEllipse(in: CGRect(
+                                            x: point.x - dotRadius,
+                                            y: point.y - dotRadius,
+                                            width: dotRadius * 2,
+                                            height: dotRadius * 2
+                                        ))
+                                    }
                                     
-                                    // Clear redo stack when new action is performed
-                                    redoStack.removeAll()
-                                    
-                                    // Save immediately to store
-                                    saveDrawingToStore()
+                                    // Commit the final stroke
+                                    commitCurrentStroke()
                                 }
+                                
+                                // Reset drawing state
+                                isDrawing = false
                             }
                     )
                 }
@@ -178,6 +215,63 @@ struct DrawingCanvasView: View {
     
     // MARK: - Private Methods
     
+    private func commitCurrentStroke() {
+        guard !currentPath.isEmpty else { return }
+        
+        // Save current state to undo stack before making changes
+        saveStateToUndoStack()
+        
+        // Add the current path to completed paths
+        paths.append(currentPath)
+        currentPath = Path()
+        
+        // Clear redo stack when new action is performed
+        redoStack.removeAll()
+        
+        // Save immediately to store
+        saveDrawingToStore()
+        
+        // Reset drawing state
+        isDrawing = false
+    }
+    
+    private func isEllipsePath(_ path: Path) -> Bool {
+        // Check if the path contains an ellipse element
+        var hasEllipse = false
+        path.forEach { element in
+            switch element {
+            case .move, .line, .quadCurve, .curve, .closeSubpath:
+                break
+            }
+        }
+        
+        // Since SwiftUI Path doesn't expose ellipse elements directly,
+        // we'll use a heuristic: if the path has very few elements and was created
+        // from addEllipse, it's likely an ellipse. For our use case, we can track
+        // this differently by checking the path's bounding box and element count.
+        let boundingRect = path.boundingRect
+        let pathElements = extractElementsFromPath(path)
+        
+        // An ellipse created with addEllipse typically has multiple curve elements
+        // and a relatively small, square-ish bounding box (for dots)
+        if pathElements.count > 4 && 
+           boundingRect.width < DRAWING_LINE_WIDTH * 2 && 
+           boundingRect.height < DRAWING_LINE_WIDTH * 2 &&
+           abs(boundingRect.width - boundingRect.height) < 1.0 {
+            hasEllipse = true
+        }
+        
+        return hasEllipse
+    }
+    
+    private func extractElementsFromPath(_ path: Path) -> [Path.Element] {
+        var elements: [Path.Element] = []
+        path.forEach { element in
+            elements.append(element)
+        }
+        return elements
+    }
+    
     private func saveStateToUndoStack() {
         // Save current paths state to undo stack
         undoStack.append(paths)
@@ -199,6 +293,7 @@ struct DrawingCanvasView: View {
         
         // Clear current path if user is in middle of drawing
         currentPath = Path()
+        isDrawing = false
         
         // Save to store
         saveDrawingToStore()
@@ -220,6 +315,7 @@ struct DrawingCanvasView: View {
         
         // Clear current path if user is in middle of drawing
         currentPath = Path()
+        isDrawing = false
         
         // Save to store
         saveDrawingToStore()
@@ -237,11 +333,24 @@ struct DrawingCanvasView: View {
             let decodedPaths = try JSONDecoder().decode([PathData].self, from: data)
             paths = decodedPaths.map { pathData in
                 var path = Path()
-                for (index, point) in pathData.points.enumerated() {
-                    if index == 0 {
-                        path.move(to: point)
-                    } else {
-                        path.addLine(to: point)
+                if pathData.isDot && pathData.points.count >= 1 {
+                    // Recreate dot as ellipse
+                    let center = pathData.points[0]
+                    let dotRadius = DRAWING_LINE_WIDTH / 2
+                    path.addEllipse(in: CGRect(
+                        x: center.x - dotRadius,
+                        y: center.y - dotRadius,
+                        width: dotRadius * 2,
+                        height: dotRadius * 2
+                    ))
+                } else {
+                    // Recreate line path
+                    for (index, point) in pathData.points.enumerated() {
+                        if index == 0 {
+                            path.move(to: point)
+                        } else {
+                            path.addLine(to: point)
+                        }
                     }
                 }
                 return path
@@ -270,7 +379,7 @@ struct DrawingCanvasView: View {
                 } else {
                     // Convert paths to serializable data
                     let pathsData = paths.map { path in
-                        PathData(points: extractPointsFromPath(path))
+                        PathData(points: extractPointsFromPath(path), isDot: isEllipsePath(path))
                     }
                     
                     do {
@@ -291,7 +400,7 @@ struct DrawingCanvasView: View {
                 } else {
                     // Has drawing content
                     let pathsData = paths.map { path in
-                        PathData(points: extractPointsFromPath(path))
+                        PathData(points: extractPointsFromPath(path), isDot: isEllipsePath(path))
                     }
                     
                     do {
@@ -320,6 +429,7 @@ struct DrawingCanvasView: View {
         
         paths.removeAll()
         currentPath = Path()
+        isDrawing = false
         
         // Clear redo stack when new action is performed
         redoStack.removeAll()
@@ -332,8 +442,18 @@ struct DrawingCanvasView: View {
     }
     
     private func extractPointsFromPath(_ path: Path) -> [CGPoint] {
-        // This is a simplified approach to extract points from a path
-        // In a real implementation, you might want to use a more sophisticated method
+        // Check if this is a dot (ellipse) path
+        if isEllipsePath(path) {
+            // For dots, store the center point
+            let boundingRect = path.boundingRect
+            let center = CGPoint(
+                x: boundingRect.midX,
+                y: boundingRect.midY
+            )
+            return [center]
+        }
+        
+        // For regular paths, extract all points
         var points: [CGPoint] = []
         
         path.forEach { element in

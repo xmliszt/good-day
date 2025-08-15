@@ -69,15 +69,21 @@ struct DrawingDisplayView: View {
                         scaledPath.closeSubpath()
                     }
                 }
-                context.stroke(
-                    scaledPath, 
-                    with: .color(.accent), 
-                    style: StrokeStyle(
-                        lineWidth: scaledStrokeWidth,
-                        lineCap: .round,
-                        lineJoin: .round
+                
+                // Check if this is a dot (ellipse) path and render accordingly
+                if isEllipsePath(scaledPath) {
+                    context.fill(scaledPath, with: .color(.accent))
+                } else {
+                    context.stroke(
+                        scaledPath, 
+                        with: .color(.accent), 
+                        style: StrokeStyle(
+                            lineWidth: scaledStrokeWidth,
+                            lineCap: .round,
+                            lineJoin: .round
+                        )
                     )
-                )
+                }
             }
         }
         .scaleEffect(isVisible ? 1.0 : 0.9)
@@ -111,6 +117,31 @@ struct DrawingDisplayView: View {
         }
     }
     
+    private func isEllipsePath(_ path: Path) -> Bool {
+        // Check if the path contains an ellipse by examining its characteristics
+        let boundingRect = path.boundingRect
+        let pathElements = extractElementsFromPath(path)
+        
+        // An ellipse created with addEllipse typically has multiple curve elements
+        // and a relatively small, square-ish bounding box (for dots)
+        if pathElements.count > 4 && 
+           boundingRect.width < DRAWING_LINE_WIDTH * 2 && 
+           boundingRect.height < DRAWING_LINE_WIDTH * 2 &&
+           abs(boundingRect.width - boundingRect.height) < 1.0 {
+            return true
+        }
+        
+        return false
+    }
+    
+    private func extractElementsFromPath(_ path: Path) -> [Path.Element] {
+        var elements: [Path.Element] = []
+        path.forEach { element in
+            elements.append(element)
+        }
+        return elements
+    }
+    
     private func loadDrawingData() {
         guard let drawingData = entry?.drawingData else {
             paths = []
@@ -121,11 +152,24 @@ struct DrawingDisplayView: View {
             let decodedPaths = try JSONDecoder().decode([PathData].self, from: drawingData)
             paths = decodedPaths.map { pathData in
                 var path = Path()
-                for (index, point) in pathData.points.enumerated() {
-                    if index == 0 {
-                        path.move(to: point)
-                    } else {
-                        path.addLine(to: point)
+                if pathData.isDot && pathData.points.count >= 1 {
+                    // Recreate dot as ellipse
+                    let center = pathData.points[0]
+                    let dotRadius = DRAWING_LINE_WIDTH / 2
+                    path.addEllipse(in: CGRect(
+                        x: center.x - dotRadius,
+                        y: center.y - dotRadius,
+                        width: dotRadius * 2,
+                        height: dotRadius * 2
+                    ))
+                } else {
+                    // Recreate line path
+                    for (index, point) in pathData.points.enumerated() {
+                        if index == 0 {
+                            path.move(to: point)
+                        } else {
+                            path.addLine(to: point)
+                        }
                     }
                 }
                 return path

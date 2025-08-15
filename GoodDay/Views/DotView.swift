@@ -52,7 +52,7 @@ struct DotView: View {
                 .animation(
                     highlighted 
                         ? .spring(response: 0.4, dampingFraction: 0.6)
-                        : .spring(response: 0.6, dampingFraction: 0.7).delay(0.002),
+                        : .spring(response: 0.4, dampingFraction: 0.6).delay(0.002),
                     value: highlighted
                 )
             
@@ -65,7 +65,7 @@ struct DotView: View {
                     .animation(
                         highlighted 
                             ? .spring(response: 0.4, dampingFraction: 0.6)
-                            : .spring(response: 0.6, dampingFraction: 0.7).delay(0.002),
+                            : .spring(response: 0.4, dampingFraction: 0.6).delay(0.002),
                         value: highlighted
                     )
             }
