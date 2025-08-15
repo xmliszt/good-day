@@ -21,6 +21,7 @@ struct EntryEditingSheetView: View {
     @State private var showDeleteConfirmation = false
     @State private var currentTime = Date()
     @State private var isTimerActive = false
+    @State private var showDrawingCanvas = false
     
     private var isToday: Bool {
         Calendar.current.isDateInToday(date)
@@ -182,11 +183,24 @@ struct EntryEditingSheetView: View {
                 
                 HStack(spacing: 8) {
                     // Delete entry button
-                    if let entry = entry, !entry.body.isEmpty && !isEditMode {
+                    if let entry = entry, (!entry.body.isEmpty || entry.drawingData != nil) && !isEditMode {
                         Button(action: { showDeleteConfirmation = true }) {
                             Image(systemName: "trash")
                                 .font(.system(size: 18, weight: .medium))
                                 .foregroundColor(.red)
+                                .frame(width: 36, height: 36)
+                                .background(.controlBackgroundColor)
+                                .clipShape(Circle())
+                        }
+                        .transition(.scale.combined(with: .opacity))
+                    }
+                    
+                    // Drawing canvas button
+                    if !isEditMode {
+                        Button(action: { showDrawingCanvas = true }) {
+                            Image(systemName: "scribble")
+                                .font(.system(size: 18, weight: .medium))
+                                .foregroundColor(.textColor)
                                 .frame(width: 36, height: 36)
                                 .background(.controlBackgroundColor)
                                 .clipShape(Circle())
@@ -223,11 +237,25 @@ struct EntryEditingSheetView: View {
                     .padding(.horizontal, -5)
             } else {
                 ScrollView {
-                    Text(editedText.isEmpty ? "No note for this day" : editedText)
-                        .font(.body)
-                        .foregroundColor(editedText.isEmpty ? .textColor.opacity(0.5) : .textColor)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .frame(minHeight: 120, alignment: .topLeading)
+                    VStack(alignment: .leading, spacing: 16) {
+                        // Text content
+                        Text(editedText.isEmpty ? "No note for this day" : editedText)
+                            .font(.body)
+                            .foregroundColor(editedText.isEmpty ? .textColor.opacity(0.5) : .textColor)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        
+                        // Drawing content
+                        if let drawingData = entry?.drawingData, !drawingData.isEmpty {
+                            VStack(alignment: .leading, spacing: 8) {
+                                DrawingDisplayView(entry: entry, displaySize: 200)
+                                    .frame(width: 200, height: 200)
+                                    .background(.controlBackgroundColor.opacity(0.3))
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                            }
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(minHeight: 120, alignment: .topLeading)
                 }
             }
             
@@ -255,6 +283,15 @@ struct EntryEditingSheetView: View {
             Button("Cancel", role: .cancel) { }
         } message: {
             Text("Delete this note?")
+        }
+        .sheet(isPresented: $showDrawingCanvas) {
+            DrawingCanvasView(
+                date: date,
+                entry: entry,
+                editedText: $editedText
+            )
+            .presentationDetents([.height(420)])
+            .presentationDragIndicator(.visible)
         }
     }
     
@@ -334,8 +371,9 @@ struct EntryEditingSheetView: View {
     private func deleteEntry() {
         guard let entry else { return }
 
-        // Clear the entry's body
+        // Clear the entry's body and drawing data
         entry.body = ""
+        entry.drawingData = nil
         editedText = ""
         
         // Save the context to persist changes
@@ -351,7 +389,7 @@ struct EntryEditingSheetView: View {
                 // Update existing entry
                 entry.body = editedText
             } else if !editedText.isEmpty {
-                // Create new entry only if there's content
+                // Create new entry if there's text content
                 let newEntry = DayEntry(body: editedText, createdAt: date)
                 modelContext.insert(newEntry)
             }
@@ -369,7 +407,7 @@ struct EntryEditingSheetView: View {
     VStack {
         EntryEditingSheetView(
             date: Date(),
-            entry: DayEntry(body: "", createdAt: Date()),
+            entry: DayEntry(body: "", createdAt: Date(), drawingData: nil),
             isEditMode: $isEditMode,
             editedText: $editedText
         )

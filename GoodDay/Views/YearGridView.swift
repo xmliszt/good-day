@@ -22,8 +22,6 @@ struct YearGridView: View {
     let year: Int
     /// The mode to display the grid in
     let viewMode: ViewMode
-    /// The number of dots per row
-    let dotsPerRow: Int
     /// The spacing between dots
     let dotsSpacing: CGFloat
     /// The items to display in the grid
@@ -33,31 +31,20 @@ struct YearGridView: View {
     /// The id of the highlighted item
     let highlightedItemId: String?
     
-    // MARK: Private states
-    /// The size of the dots (computed based on view mode)
-    private var dotSize: CGFloat {
-        switch viewMode {
-        case .now:
-            return 12.0
-        case .year:
-            return 8.0
-        }
-    }
-    
     
     // MARK: View
     var body: some View {
         // Use a completely flat structure with manual positioning
         // This ensures every dot maintains stable identity regardless of layout changes
-        let numberOfRows = (items.count + dotsPerRow - 1) / dotsPerRow
-        let totalContentHeight = CGFloat(numberOfRows) * (dotSize + dotsSpacing)
+        let numberOfRows = (items.count + viewMode.dotsPerRow - 1) / viewMode.dotsPerRow
+        let totalContentHeight = CGFloat(numberOfRows) * (viewMode.dotSize + dotsSpacing)
         
         VStack(spacing: 0) {
             GeometryReader { geometry in
                 let containerWidth = geometry.size.width
-                let totalSpacingWidth = CGFloat(dotsPerRow - 1) * dotsSpacing
+                let totalSpacingWidth = CGFloat(viewMode.dotsPerRow - 1) * dotsSpacing
                 let totalDotWidth = containerWidth - totalSpacingWidth
-                let itemSpacing = totalDotWidth / CGFloat(dotsPerRow)
+                let itemSpacing = totalDotWidth / CGFloat(viewMode.dotsPerRow)
                 let startX = itemSpacing / 2
                 
                 ZStack(alignment: .topLeading) {
@@ -65,20 +52,32 @@ struct YearGridView: View {
                         let dotStyle = getDotStyle(for: item.date)
                         let entry = entryForDate(item.date)
                         let hasEntry = entry != nil && entry!.body.isEmpty == false
+                        let hasDrawing = entry?.drawingData != nil && !(entry?.drawingData?.isEmpty ?? true)
                         let isHighlighted = highlightedItemId == item.id
                         let isToday = Calendar.current.isDate(item.date, inSameDayAs: Date())
                         
-                        let row = index / dotsPerRow
-                        let col = index % dotsPerRow
+                        let row = index / viewMode.dotsPerRow
+                        let col = index % viewMode.dotsPerRow
                         let xPos = startX + CGFloat(col) * (itemSpacing + dotsSpacing)
-                        let yPos = CGFloat(row) * (dotSize + dotsSpacing)
+                        let yPos = CGFloat(row) * (viewMode.dotSize + dotsSpacing)
                     
-                        DotView(
-                            size: dotSize,
-                            highlighted: isHighlighted,
-                            withEntry: hasEntry,
-                            dotStyle: dotStyle
-                        )
+                        Group {
+                            if hasDrawing {
+                                // Show drawing instead of dot with specific frame sizes
+                                DrawingDisplayView(entry: entry, displaySize: viewMode.drawingSize)
+                                    .frame(width: viewMode.drawingSize, height: viewMode.drawingSize)
+                                    .scaleEffect(isHighlighted ? 2.0 : 1.0)
+                                    .animation(.spring(response: 0.4, dampingFraction: 0.6), value: isHighlighted)
+                            } else {
+                                // Show regular dot
+                                DotView(
+                                    size: viewMode.dotSize,
+                                    highlighted: isHighlighted,
+                                    withEntry: hasEntry,
+                                    dotStyle: dotStyle
+                                )
+                            }
+                        }
                         // Stable identity based on date, this is important
                         // so that every single dot is morphed between mode switch
                         // as it is considered as one
@@ -86,8 +85,7 @@ struct YearGridView: View {
                         // Add special ID for today's dot for auto-scroll
                         .if(isToday) { $0.id("todayDot") }
                         // Center the dot
-                        .position(x: xPos, y: yPos + dotSize/2)
-                        // Add staggered animation delay based on chronological date order
+                        .position(x: xPos, y: yPos + viewMode.dotSize/2)
                         .animation(
                             .spring(response: 0.6, dampingFraction: 0.8),
                             value: viewMode
@@ -98,12 +96,11 @@ struct YearGridView: View {
                         )
                         .animation(
                             .spring(response: 0.6, dampingFraction: 0.8),
-                            value: dotsPerRow
+                            value: viewMode.dotsPerRow
                         )
                         .animation(
-                            .spring(response: 0.6, dampingFraction: 0.8)
-                            .delay(Double(index) * 0.003),
-                            value: dotSize)
+                            .spring(response: 0.6, dampingFraction: 0.8),
+                            value: viewMode.dotSize)
                     }
                 }
             }
@@ -165,7 +162,6 @@ struct YearGridView: View {
             YearGridView(
                 year: currentYear,
                 viewMode: .now,
-                dotsPerRow: 7,
                 dotsSpacing: 25,
                 items: sampleItems,
                 entries: [],
@@ -174,7 +170,6 @@ struct YearGridView: View {
             YearGridView(
                 year: currentYear,
                 viewMode: .year,
-                dotsPerRow: 25,
                 dotsSpacing: 8,
                 items: sampleItems,
                 entries: [],

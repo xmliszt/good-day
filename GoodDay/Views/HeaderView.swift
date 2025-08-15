@@ -8,12 +8,26 @@
 import SwiftUI
 
 struct HeaderView: View {
+    let highlightedEntry: DayEntry?
     let geometry: GeometryProxy
     let highlightedItem: YearGridViewItem?
     @Binding var selectedYear: Int
     let viewMode: ViewMode
     let onToggleViewMode: () -> Void
     let onSettingsAction: () -> Void
+    
+    private let drawingSize: CGFloat = 52.0
+    
+    private var dotColor: Color {
+        guard let highlightedItem else { return .textColor }
+        let isHighlightedToday = Calendar.current.isDate(highlightedItem.date, inSameDayAs: Date())
+        return isHighlightedToday ? .accent : .textColor
+    }
+    
+    private var hasDrawing: Bool {
+        guard let entry = highlightedEntry else { return false }
+        return entry.drawingData != nil && !(entry.drawingData?.isEmpty ?? false)
+    }
     
     var body: some View {
         VStack(spacing: 0) {
@@ -24,10 +38,42 @@ struct HeaderView: View {
             
             // Header content
             HStack {
-                YearSelectorView(
-                    highlightedItem: highlightedItem,
-                    selectedYear: $selectedYear
-                )
+                HStack (spacing: hasDrawing ? 12 : 6) {
+                    YearSelectorView(
+                        highlightedItem: highlightedItem,
+                        selectedYear: $selectedYear
+                    )
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+                    
+                    if let entry = highlightedEntry {
+                        if entry.drawingData != nil && !(entry.drawingData?.isEmpty ?? false) {
+                            // Create a layout placeholder that doesn't affect HStack height
+                            Rectangle()
+                                .fill(Color.clear)
+                                .frame(width: 36, height: 36) // Small layout footprint
+                                .overlay(
+                                    DrawingDisplayView(entry: entry, displaySize: drawingSize)
+                                        .frame(width: drawingSize, height: drawingSize)
+                                        .animation(.spring(response: 0.4, dampingFraction: 0.6), value: highlightedEntry)
+                                )
+                        } else if !entry.body.isEmpty {
+                            ZStack {
+                                // Dot
+                                Circle()
+                                    .fill(dotColor)
+                                    .frame(width: 12, height: 12)
+                                
+                                // Ring
+                                Circle()
+                                    .stroke(dotColor, lineWidth: 2)
+                                    .frame(width: 18, height: 18)
+                            }
+                            .frame(width: 36, height: 36) // Match the layout footprint
+                            .animation(.spring(response: 0.4, dampingFraction: 0.6), value: highlightedEntry)
+                        }
+                    }
+                }
                 
                 Spacer()
   
@@ -70,6 +116,7 @@ struct HeaderView: View {
     
     GeometryReader { geometry in
         HeaderView(
+            highlightedEntry: nil,
             geometry: geometry,
             highlightedItem: YearGridViewItem(id: "test", date: Date()),
             selectedYear: $selectedYear,

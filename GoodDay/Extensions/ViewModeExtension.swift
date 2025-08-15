@@ -36,3 +36,26 @@ extension ViewMode: CaseIterable {
         }
     }
 }
+
+extension ViewMode {
+    var dotSize: CGFloat {
+        switch self {
+        case .now: return 12.0
+        case .year: return 8.0
+        }
+    }
+    
+    var drawingSize: CGFloat {
+        switch self {
+        case .now: return 48.0
+        case .year: return 20.0
+        }
+    }
+    
+    var dotsPerRow: Int {
+        switch self {
+        case .now: return 7
+        case .year: return 16
+        }
+    }
+}

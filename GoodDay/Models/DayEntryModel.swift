@@ -12,9 +12,11 @@ import SwiftData
 final class DayEntry {
     var body: String
     var createdAt: Date
+    var drawingData: Data?
     
-    init(body: String, createdAt: Date) {
+    init(body: String, createdAt: Date, drawingData: Data? = nil) {
         self.body = body
         self.createdAt = createdAt
+        self.drawingData = drawingData
     }
 }

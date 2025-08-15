@@ -62,21 +62,10 @@ struct ContentView: View {
         }
     }
     
-    /// Size of the dot based on view mode.
-    private var dotSize: CGFloat {
-        switch viewMode {
-        case .now:
-            return 12.0 // Standard size for now mode
-        case .year:
-            return 8.0 // Smaller size for year mode
-        }
-    }
-    
     var body: some View {
         GeometryReader { geometry in
             
             // Calculate spacing for the grid based on geometry values
-            let dotsPerRow = calculateDotsPerRow(for: geometry)
             let itemsSpacing = calculateSpacing(for: geometry, viewMode: viewMode)
             
             ZStack(alignment: .top) {
@@ -91,7 +80,6 @@ struct ContentView: View {
                         YearGridView(
                             year: selectedYear,
                             viewMode: viewMode,
-                            dotsPerRow: dotsPerRow,
                             dotsSpacing: itemsSpacing,
                             items: itemsInYear,
                             entries: entries,
@@ -130,6 +118,7 @@ struct ContentView: View {
                 
                 // Floating header with blur backdrop
                 HeaderView(
+                    highlightedEntry: highlightedId != nil ? (entries.first(where: { $0.createdAt == getItem(from: highlightedId!)?.date})) : nil,
                     geometry: geometry,
                     highlightedItem: highlightedId != nil ? getItem(from: highlightedId!) : nil,
                     selectedYear: $selectedYear,
@@ -174,15 +163,10 @@ struct ContentView: View {
     
     /// Calculate spacing between dots based on view mode
     private func calculateSpacing(for geometry: GeometryProxy, viewMode: ViewMode) -> CGFloat {
-        let dotsPerRow = calculateDotsPerRow(for: geometry)
-        
-        // Ensure we have at least one space between dots
-        guard dotsPerRow > 1 else { return 0 }
-        
         let gridWidth = geometry.size.width - (2 * GRID_HORIZONTAL_PADDING)
-        let totalDotsWidth = dotSize * CGFloat(dotsPerRow)
+        let totalDotsWidth = viewMode.dotSize * CGFloat(viewMode.dotsPerRow)
         let availableSpace = gridWidth - totalDotsWidth
-        let spacing = availableSpace / CGFloat(dotsPerRow - 1)
+        let spacing = availableSpace / CGFloat(viewMode.dotsPerRow - 1)
         
         // Apply minimum spacing based on view mode
         let minimumSpacing: CGFloat = viewMode == .now ? 4 : 2
@@ -309,22 +293,11 @@ struct ContentView: View {
     
     
     // MARK: Utils
-    /// Number of dots per row in the grid
-    private func calculateDotsPerRow(for geometry: GeometryProxy) -> Int {
-        switch viewMode {
-        case .now:
-            return 7
-        case .year:
-            return 16
-        }
-    }
-    
     /// Get the item id for a particular CGPoint location inside the given geometry
     private func getItemId(at location: CGPoint, for geometry: GeometryProxy) -> String? {
         let gridWidth = geometry.size.width
         
         // Use the appropriate dots per row and spacing based on view mode
-        let dotsPerRow = calculateDotsPerRow(for: geometry)
         let spacing = calculateSpacing(for: geometry, viewMode: viewMode)
         
         // Adjust location for grid coordinates
@@ -334,13 +307,13 @@ struct ContentView: View {
         
         // Use the same positioning logic as YearGridView
         let containerWidth = gridWidth - (2 * GRID_HORIZONTAL_PADDING) // Account for both sides of padding
-        let totalSpacingWidth = CGFloat(dotsPerRow - 1) * spacing
+        let totalSpacingWidth = CGFloat(viewMode.dotsPerRow - 1) * spacing
         let totalDotWidth = containerWidth - totalSpacingWidth
-        let itemSpacing = totalDotWidth / CGFloat(dotsPerRow)
+        let itemSpacing = totalDotWidth / CGFloat(viewMode.dotsPerRow)
         let startX = itemSpacing / 2
         
         // Calculate row based on vertical position
-        let rowHeight = dotSize + spacing
+        let rowHeight = viewMode.dotSize + spacing
         let row = max(0, Int(floor(adjustedY / rowHeight)))
         
         // Calculate column based on horizontal position using YearGridView's logic
@@ -348,7 +321,7 @@ struct ContentView: View {
         var closestCol = 0
         var minDistance = CGFloat.greatestFiniteMagnitude
         
-        for col in 0..<dotsPerRow {
+        for col in 0..<viewMode.dotsPerRow {
             let xPos = startX + CGFloat(col) * (itemSpacing + spacing)
             let distance = abs(adjustedX - xPos)
             if distance < minDistance {
@@ -358,8 +331,8 @@ struct ContentView: View {
         }
         
         // Ensure we don't go out of bounds
-        let col = max(0, min(dotsPerRow - 1, closestCol))
-        let itemIndex = row * dotsPerRow + col
+        let col = max(0, min(viewMode.dotsPerRow - 1, closestCol))
+        let itemIndex = row * viewMode.dotsPerRow + col
         
         // Ensure we don't exceed the items array bounds
         guard itemIndex < itemsInYear.count else { return nil }
@@ -516,16 +489,15 @@ struct ContentView: View {
         }
         
         // Calculate proper anchor to center the dot on screen (only used for current year)
-        let dotsPerRow = calculateDotsPerRow(for: geometry)
         let spacing = calculateSpacing(for: geometry, viewMode: viewMode)
         
         // Calculate dot position within the content
-        let row = itemIndex / dotsPerRow
-        let dotYPosition = CGFloat(row) * (dotSize + spacing) + 20 // Add top padding
+        let row = itemIndex / viewMode.dotsPerRow
+        let dotYPosition = CGFloat(row) * (viewMode.dotSize + spacing) + 20 // Add top padding
         
         // Calculate total content height
-        let numberOfRows = (itemsInYear.count + dotsPerRow - 1) / dotsPerRow
-        let totalContentHeight = CGFloat(numberOfRows) * (dotSize + spacing)
+        let numberOfRows = (itemsInYear.count + viewMode.dotsPerRow - 1) / viewMode.dotsPerRow
+        let totalContentHeight = CGFloat(numberOfRows) * (viewMode.dotSize + spacing)
         
         // Calculate visible screen area (excluding header)
         let visibleScreenHeight = geometry.size.height - headerHeight

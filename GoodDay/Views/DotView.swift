@@ -49,8 +49,12 @@ struct DotView: View {
                 .fill(dotColor)
                 .frame(width: size, height: size)
                 .scaleEffect(scale)
-                .animation(.spring(response: 0.4, dampingFraction: 0.6), value: highlighted)
-                .animation(.spring(response: 0.4, dampingFraction: 0.6), value: scale)
+                .animation(
+                    highlighted 
+                        ? .spring(response: 0.4, dampingFraction: 0.6)
+                        : .spring(response: 0.6, dampingFraction: 0.7).delay(0.002),
+                    value: highlighted
+                )
             
             // Ring for entries - positioned absolutely
             if withEntry {
@@ -58,8 +62,12 @@ struct DotView: View {
                     .stroke(ringColor, lineWidth: size * 0.15)
                     .frame(width: size * 1.5, height: size * 1.5)
                     .scaleEffect(scale)
-                    .animation(.spring(response: 0.4, dampingFraction: 0.6), value: highlighted)
-                    .animation(.spring(response: 0.4, dampingFraction: 0.6), value: scale)
+                    .animation(
+                        highlighted 
+                            ? .spring(response: 0.4, dampingFraction: 0.6)
+                            : .spring(response: 0.6, dampingFraction: 0.7).delay(0.002),
+                        value: highlighted
+                    )
             }
         }
         // Use a fixed frame size to prevent layout changes

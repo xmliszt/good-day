@@ -56,9 +56,11 @@ struct YearSelectorView: View {
         } label: {
             HStack(spacing: 4) {
                 Text(headerText)
-                    .font(.largeTitle)
-                    .fontWeight(.heavy)
+                    .font(.title)
+                    .fontWeight(.bold)
                     .foregroundColor(headerColor)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
             }
         }
         .menuStyle(BorderlessButtonMenuStyle())
