@@ -41,6 +41,8 @@ struct ContentView: View {
   @State private var moveSourceEntry: DayEntry?
   /// The source date for the drawing being moved
   @State private var moveSourceDate: Date?
+  /// Index of the source doodle being moved within the source entry's doodle list
+  @State private var moveSourceDoodleIndex: Int = 0
   /// Target date selected by the user for the confirmation alert
   @State private var moveTargetDate: Date?
   /// Whether to show the move confirmation alert
@@ -50,6 +52,9 @@ struct ContentView: View {
   @State private var yearGridViewSize: CGSize = .zero
   @State private var scrollProxy: ScrollViewProxy?
   @State private var showDrawingCanvas: Bool = false
+  /// Which doodle slot the drawing canvas should edit / create. Set from the
+  /// carousel card or placeholder tap before the canvas opens.
+  @State private var editingDoodleIndex: Int = 0
   /// Flipped true to ask `DrawingCanvasView` to run its save flow (saving-state
   /// UI → persist) before collapsing. The canvas resets it once it begins.
   @State private var canvasSaveDismissTrigger: Bool = false
@@ -411,8 +416,9 @@ struct ContentView: View {
               EntryEditingView(
                 date: dataProvider.selectedDateItem?.date,
                 entry: selectedEntry,
-                onOpenDrawingCanvas: {
+                onOpenDrawingCanvas: { index in
                   Haptic.play()
+                  editingDoodleIndex = index
                   // Track if entry already has doodle before opening canvas
                   entryHadDoodleOnCanvasOpen = selectedEntry?.drawingData != nil
                   showDrawingCanvas = true
@@ -433,8 +439,8 @@ struct ContentView: View {
                 onNoteEditDismissed: {
                   isNoteEditing = false
                 },
-                onMoveDrawingRequested: {
-                  enterMoveDrawingMode()
+                onMoveDrawingRequested: { index in
+                  enterMoveDrawingMode(doodleIndex: index)
                 }
               )
             }, hasBottomView: dataProvider.selectedDateItem != nil,
@@ -514,6 +520,7 @@ struct ContentView: View {
             DrawingCanvasView(
               date: dataProvider.selectedDateItem!.date,
               entry: selectedEntry,
+              doodleIndex: editingDoodleIndex,
               // Called by the canvas only after its save flow completes, so the
               // collapse animation runs against an already-persisted entry.
               onDismiss: {
@@ -543,6 +550,10 @@ struct ContentView: View {
                 nudging: FeatureTipDefinitions.TipID.canvasFinish)
             }
         )
+        // Keyed by date only — NOT the doodle slot. Keeping the view identity
+        // stable across slot switches lets the Dynamic Island expand animation
+        // play; the canvas reloads the correct slot via its onChange(of: isShowing)
+        // → loadExistingDrawing(), which reads the current doodleIndex.
         .id("DynamicIslandExpandedView-\(dataProvider.selectedDateItem?.id ?? "none")")
       }
 
@@ -1189,15 +1200,15 @@ struct ContentView: View {
   // MARK: - Move Drawing Mode
 
   /// Enter move drawing mode — store source entry and collapse bottom panel
-  private func enterMoveDrawingMode() {
+  private func enterMoveDrawingMode(doodleIndex: Int) {
     guard let entry = selectedEntry,
-          entry.drawingData != nil,
-          !(entry.drawingData?.isEmpty ?? true),
+          entry.doodles.indices.contains(doodleIndex),
           let date = dataProvider.selectedDateItem?.date
     else { return }
 
     moveSourceEntry = entry
     moveSourceDate = date
+    moveSourceDoodleIndex = doodleIndex
 
     // Switch to regular view if currently in minimized mode
     if dataProvider.viewMode != .now {
@@ -1240,16 +1251,15 @@ struct ContentView: View {
     moveSourceEntry = nil
     moveSourceDate = nil
     moveTargetDate = nil
+    moveSourceDoodleIndex = 0
   }
 
   /// Handle a tap in move drawing mode — check if target is valid and show confirmation
   private func handleMoveModeTap(item: DateItem) {
-    // Check if target has a drawing already
+    // A day can receive the moved doodle as long as it isn't already at the
+    // per-day doodle cap.
     let targetEntry = entries.first(where: { $0.matches(date: item.date) })
-    let targetHasDrawing = targetEntry?.drawingData != nil && !(targetEntry?.drawingData?.isEmpty ?? true)
-
-    // Ignore taps on dates that already have drawings
-    if targetHasDrawing { return }
+    if let targetEntry, !targetEntry.canAddDoodle { return }
 
     // Ignore taps on the source date itself
     if let sourceDate = moveSourceDate,
@@ -1271,27 +1281,34 @@ struct ContentView: View {
 
     // Re-fetch source entry to ensure it's fresh
     let freshSourceEntry = DayEntry.findOrCreate(for: sourceDate, in: modelContext)
-    guard freshSourceEntry.drawingData != nil && !(freshSourceEntry.drawingData?.isEmpty ?? true) else {
-      // Drawing was somehow removed — exit move mode
+    let sourceIndex = moveSourceDoodleIndex
+    guard freshSourceEntry.doodles.indices.contains(sourceIndex) else {
+      // Doodle was somehow removed — exit move mode
       exitMoveDrawingMode(reselectSource: false)
       return
     }
+    let sourceDoodle = freshSourceEntry.doodles[sourceIndex]
 
     // 1. Get or create the target entry
     let targetEntry = DayEntry.findOrCreate(for: targetDate, in: modelContext)
+    guard targetEntry.canAddDoodle else {
+      // Target filled to the cap in the meantime — abort the move
+      exitMoveDrawingMode(reselectSource: true)
+      return
+    }
 
-    // 2. Move drawing data
-    targetEntry.drawingData = freshSourceEntry.drawingData
-    targetEntry.drawingThumbnail20 = freshSourceEntry.drawingThumbnail20
-    targetEntry.drawingThumbnail200 = freshSourceEntry.drawingThumbnail200
+    // 2. Append the doodle to the target
+    targetEntry.appendDoodle(
+      drawingData: sourceDoodle.drawingData,
+      thumbnail20: sourceDoodle.thumbnail20,
+      thumbnail200: sourceDoodle.thumbnail200
+    )
 
-    // 3. Clear drawing from source
-    freshSourceEntry.drawingData = nil
-    freshSourceEntry.drawingThumbnail20 = nil
-    freshSourceEntry.drawingThumbnail200 = nil
+    // 3. Remove the doodle from the source
+    freshSourceEntry.removeDoodle(at: sourceIndex)
 
-    // 4. If source entry is now empty (no text, no drawing), delete it
-    if freshSourceEntry.body.isEmpty {
+    // 4. If source entry is now empty (no doodles, no text), delete it
+    if freshSourceEntry.doodleCount == 0 && freshSourceEntry.body.isEmpty {
       freshSourceEntry.deleteAllForSameDate(in: modelContext)
     }
 
@@ -1320,6 +1337,7 @@ struct ContentView: View {
     moveSourceEntry = nil
     moveSourceDate = nil
     moveTargetDate = nil
+    moveSourceDoodleIndex = 0
 
     // Select the target date to show the moved drawing
     if let scrollProxy {

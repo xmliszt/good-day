@@ -16,7 +16,7 @@ struct EntryEditingView: View {
 
   private let date: Date?
   private let selectedEntry: DayEntry?
-  private let onOpenDrawingCanvas: (() -> Void)?
+  private let onOpenDrawingCanvas: ((Int) -> Void)?
   private let onFocusChange: ((Bool) -> Void)?
   private let mockStore: MockDataStore?
   private let tutorialMode: Bool
@@ -29,8 +29,9 @@ struct EntryEditingView: View {
   /// change). The parent should dismiss NoteEditingPopupView in response.
   private let onNoteEditDismissed: (() -> Void)?
   /// Called when user taps the date label to initiate a drawing move.
-  /// Only fires when the current entry has a drawing.
-  private let onMoveDrawingRequested: (() -> Void)?
+  /// Only fires when the current entry has a drawing. Carries the index of the
+  /// doodle to move.
+  private let onMoveDrawingRequested: ((Int) -> Void)?
   /// When true, tapping the drawing display does NOT open the drawing canvas.
   /// Used during the moveDrawing tutorial step so the user must use the context menu.
   private let disableDrawingTap: Bool
@@ -38,14 +39,14 @@ struct EntryEditingView: View {
   init(
     date: Date?,
     entry: DayEntry? = nil,
-    onOpenDrawingCanvas: (() -> Void)? = nil,
+    onOpenDrawingCanvas: ((Int) -> Void)? = nil,
     onFocusChange: ((Bool) -> Void)? = nil,
     mockStore: MockDataStore? = nil,
     tutorialMode: Bool = false,
     showReminderSheetBinding: Binding<Bool>? = nil,
     onNoteEditRequested: ((String, @escaping (String) -> Void) -> Void)? = nil,
     onNoteEditDismissed: (() -> Void)? = nil,
-    onMoveDrawingRequested: (() -> Void)? = nil,
+    onMoveDrawingRequested: ((Int) -> Void)? = nil,
     disableDrawingTap: Bool = false
   ) {
     self.date = date
@@ -69,6 +70,9 @@ struct EntryEditingView: View {
   @State private var textContent: String = ""
   @State private var isEditingNote: Bool = false
   @State private var entry: DayEntry?
+  /// Currently displayed page in the doodle carousel. Equals `doodleCount` when
+  /// the trailing "+" placeholder page is showing.
+  @State private var carouselIndex: Int = 0
   @State private var showButtons = true
   @State private var showShareSheet = false
   @State private var _showReminderSheetInternal = false
@@ -86,8 +90,13 @@ struct EntryEditingView: View {
   /// At 0.15 split (top Y at ~15% of screen), use full width
   private var drawingDisplaySize: CGFloat {
     let minDrawingSize: CGFloat = 160
-    let padding: CGFloat = 40 // 20 padding on each side
-    let maxDrawingSize = max(minDrawingSize, containerWidth - padding)
+    // `containerWidth` is measured outside the 20pt content padding, so
+    // `containerWidth - 40` is already the paged carousel's page width. A card
+    // that wide touches its neighbours with no gap, so keep the largest card a
+    // little shy of full width to give adjacent doodles breathing room.
+    let padding: CGFloat = 40 // cancels the 20pt-per-side content padding
+    let carouselGap: CGFloat = 44 // keeps the max card shy of full width
+    let maxDrawingSize = max(minDrawingSize, containerWidth - padding - carouselGap)
 
     guard screenHeight > 0 else { return 160 }
 
@@ -235,6 +244,95 @@ struct EntryEditingView: View {
     }
   }
 
+  /// The slot the header pencil edits: the currently viewed carousel page,
+  /// clamped so it never exceeds the "new slot" index (`doodleCount`).
+  private var headerEditIndex: Int {
+    let count = entry?.doodleCount ?? 0
+    return min(max(0, carouselIndex), count)
+  }
+
+  /// Horizontal paged carousel of the day's doodles plus a trailing "+"
+  /// placeholder page (shown whenever the day can still add a doodle). On an
+  /// empty day the placeholder is the only page — the default entry point.
+  @ViewBuilder
+  private var doodleCarousel: some View {
+    let doodles = entry?.doodles ?? []
+    let canAdd = entry?.canAddDoodle ?? true
+    let placeholderIndex = doodles.count
+    let pageCount = doodles.count + (canAdd ? 1 : 0)
+
+    VStack(spacing: 12) {
+      TabView(selection: $carouselIndex) {
+        ForEach(Array(doodles.enumerated()), id: \.element.id) { index, doodle in
+          DoodleCardView(
+            entry: entry,
+            doodle: doodle,
+            isPlaceholder: false,
+            size: drawingDisplaySize,
+            onTap: { onOpenDrawingCanvas?(index) }
+          )
+          .contextMenu {
+            Button {
+              onOpenDrawingCanvas?(index)
+            } label: {
+              Label("Edit Doodle", systemImage: "pencil")
+            }
+            Button {
+              onMoveDrawingRequested?(index)
+            } label: {
+              Label("Move to Another Date", systemImage: "arrow.up.right.square")
+            }
+            Button(role: .destructive) {
+              deleteDoodle(at: index)
+            } label: {
+              Label(String(localized: "Delete Doodle"), systemImage: "trash")
+            }
+          }
+          .frame(maxWidth: .infinity)
+          .tag(index)
+        }
+
+        if canAdd {
+          DoodleCardView(
+            entry: entry,
+            doodle: nil,
+            isPlaceholder: true,
+            size: drawingDisplaySize,
+            onTap: { onOpenDrawingCanvas?(placeholderIndex) }
+          )
+          .frame(maxWidth: .infinity)
+          .tag(placeholderIndex)
+        }
+      }
+      .frame(height: drawingDisplaySize)
+      .tabViewStyle(.page(indexDisplayMode: .never))
+      .animation(.springFkingSatifying, value: drawingDisplaySize)
+
+      // Page indicator: a dot per doodle, a "+" for the placeholder page.
+      if pageCount > 1 {
+        HStack(spacing: 6) {
+          ForEach(0..<pageCount, id: \.self) { index in
+            let isPlaceholderDot = canAdd && index == placeholderIndex
+            Group {
+              if isPlaceholderDot {
+                Image(systemName: "plus")
+                  .font(.system(size: 7, weight: .bold))
+                  .frame(width: 7, height: 7)
+              } else {
+                Circle()
+                  .frame(width: 6, height: 6)
+              }
+            }
+            .foregroundColor(index == carouselIndex ? .appAccent : .secondaryTextColor.opacity(0.3))
+          }
+        }
+        .animation(.easeInOut(duration: 0.2), value: carouselIndex)
+        .animation(.easeInOut(duration: 0.2), value: pageCount)
+      }
+    }
+    .frame(maxWidth: .infinity)
+  }
+
   var body: some View {
     ZStack {
       VStack(alignment: .leading, spacing: 0) {
@@ -247,9 +345,10 @@ struct EntryEditingView: View {
         ScrollView {
           VStack(alignment: .leading, spacing: 0) {
             // Drawing content
-            if let drawingData = displayDrawingData, !drawingData.isEmpty {
-              VStack(alignment: .center, spacing: 8) {
-                if isMockMode {
+            if isMockMode {
+              // Tutorial/mock mode keeps its single mock card (no carousel).
+              if let drawingData = displayDrawingData, !drawingData.isEmpty {
+                VStack(alignment: .center, spacing: 8) {
                   // In mock mode, create a temporary DayEntry for display
                   let tempEntry = DayEntry(
                     body: mockEntry?.body ?? "",
@@ -268,47 +367,23 @@ struct EntryEditingView: View {
                   .animation(.springFkingSatifying, value: drawingDisplaySize)
                   .onTapGesture {
                     guard !disableDrawingTap else { return }
-                    onOpenDrawingCanvas?()
+                    onOpenDrawingCanvas?(0)
                   }
                   .contextMenu {
                     // In tutorial view, only show the move option
                     Button {
-                      onMoveDrawingRequested?()
+                      onMoveDrawingRequested?(0)
                     } label: {
                       Label(String(localized: "Move to Another Date"), systemImage: "arrow.up.right.square")
                     }
                   }
                   .tutorialHighlightAnchor("entryDrawing", isEnabled: tutorialMode)
-                } else {
-                  DrawingDisplayView(
-                    entry: entry,
-                    displaySize: drawingDisplaySize,
-                    animateDrawing: true
-                  )
-                  .frame(width: drawingDisplaySize, height: drawingDisplaySize)
-                  .background(.appSurface)
-                  .clipShape(RoundedRectangle(cornerRadius: 20))
-                  .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: 20))
-                  .animation(.springFkingSatifying, value: drawingDisplaySize)
-                  .onTapGesture {
-                    onOpenDrawingCanvas?()
-                  }
-                  .contextMenu {
-                    Button {
-                      onMoveDrawingRequested?()
-                    } label: {
-                      Label("Move to Another Date", systemImage: "arrow.up.right.square")
-                    }
-                    Button {
-                      onOpenDrawingCanvas?()
-                    } label: {
-                      Label("Edit Doodle", systemImage: "pencil")
-                    }
-                  }
                 }
+                .frame(maxWidth: .infinity)
+                .contentShape(Rectangle())
               }
-              .frame(maxWidth: .infinity)
-              .contentShape(Rectangle())
+            } else {
+              doodleCarousel
             }
 
             // Note text display — tappable to open the editing popup
@@ -405,6 +480,12 @@ struct EntryEditingView: View {
       .onChange(of: entry) { _, _ in
         // Skip in mock mode
         guard !isMockMode else { return }
+
+        // A new entry (typically a date change) opens the carousel on whichever
+        // doodle the grid is currently cross-fading to — computed from the same
+        // time-deterministic formula the grid cell uses — so tapping a day shows
+        // the doodle the user was looking at, not always the first.
+        carouselIndex = DoodleCarouselCell.displayedIndex(count: entry?.doodleCount ?? 0)
 
         // Restart timer when entry changes (loaded or modified)
         startTimerIfNeeded()
@@ -612,7 +693,7 @@ struct EntryEditingView: View {
                 // Drawing canvas button
                 if !isEditingNote && showButtons {
                   Button {
-                    self.onOpenDrawingCanvas?()
+                    self.onOpenDrawingCanvas?(headerEditIndex)
                   } label: {
                     Image(systemName: "scribble.variable")
                   }
@@ -643,7 +724,7 @@ struct EntryEditingView: View {
               // Drawing canvas button
               if !isEditingNote && showButtons {
                 Button {
-                  self.onOpenDrawingCanvas?()
+                  self.onOpenDrawingCanvas?(headerEditIndex)
                 } label: {
                   Image(systemName: "scribble.variable")
                 }
@@ -736,6 +817,33 @@ private var needsRealTimeUpdates: Bool {
   return CountdownHelper.needsRealTimeUpdates(from: Date(), to: date)
 }
 
+/// Delete a single doodle at `index` from the current day, cleaning up the
+/// entry entirely if the day is then empty (no doodles and no note).
+private func deleteDoodle(at index: Int) {
+  guard !isMockMode, let entry else { return }
+  guard entry.doodles.indices.contains(index) else { return }
+
+  entry.removeDoodle(at: index)
+
+  if entry.doodleCount == 0 && entry.body.isEmpty {
+    entry.deleteAllForSameDate(in: modelContext)
+    self.entry = nil
+  } else {
+    try? modelContext.save()
+  }
+
+  // Keep the carousel index within the new page range.
+  let remaining = self.entry?.doodleCount ?? 0
+  let canAdd = self.entry?.canAddDoodle ?? true
+  let newPageCount = remaining + (canAdd ? 1 : 0)
+  if carouselIndex >= newPageCount {
+    carouselIndex = max(0, newPageCount - 1)
+  }
+
+  WidgetHelper.shared.scheduleWidgetDataUpdate(in: modelContext)
+  Haptic.play()
+}
+
 private func deleteEntry() {
   // Skip in mock mode
   guard !isMockMode else { return }
@@ -818,6 +926,50 @@ func saveNote(text: String, for date: Date) {
 }
 }
 
+// MARK: - DoodleCardView
+
+/// A single full-size doodle card. Renders a drawing when `isPlaceholder` is
+/// false, otherwise a centered "tap to add a doodle" guide. Both states share
+/// the same chrome (surface background, rounded clip, dynamic size) so the
+/// placeholder is visually the same card as a filled one.
+private struct DoodleCardView: View {
+  let entry: DayEntry?
+  let doodle: Doodle?
+  let isPlaceholder: Bool
+  let size: CGFloat
+  let onTap: () -> Void
+
+  var body: some View {
+    Group {
+      if isPlaceholder {
+        VStack(spacing: 10) {
+          Image(systemName: "plus")
+            .font(.system(size: 28, weight: .light))
+            .foregroundColor(.secondaryTextColor)
+          Text("Tap to add a doodle")
+            .font(.appSubheadline())
+            .foregroundColor(.secondaryTextColor)
+        }
+        .frame(width: size, height: size)
+      } else {
+        DrawingDisplayView(
+          entry: entry,
+          doodle: doodle,
+          displaySize: size,
+          animateDrawing: true
+        )
+        .frame(width: size, height: size)
+      }
+    }
+    .frame(width: size, height: size)
+    .background(.appSurface)
+    .clipShape(RoundedRectangle(cornerRadius: 20))
+    .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: 20))
+    .animation(.springFkingSatifying, value: size)
+    .onTapGesture { onTap() }
+  }
+}
+
 // MARK: - NoteDisplayButtonStyle
 
 private struct NoteDisplayButtonStyle: ButtonStyle {
@@ -833,7 +985,7 @@ private struct NoteDisplayButtonStyle: ButtonStyle {
 #Preview("Real Mode") {
   EntryEditingView(
     date: Date(),
-    onOpenDrawingCanvas: { print("Open canvas") },
+    onOpenDrawingCanvas: { index in print("Open canvas at \(index)") },
     onFocusChange: nil
   )
   .modelContainer(for: DayEntry.self, inMemory: true)

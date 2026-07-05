@@ -521,14 +521,14 @@ struct InteractiveTutorialView: View {
                     // Entry editing view - using real view with mock store
                     EntryEditingView(
                         date: mockStore.selectedDateItem?.date,
-                        onOpenDrawingCanvas: {
+                        onOpenDrawingCanvas: { _ in
                             handlePaintButtonTapped()
                         },
                         onFocusChange: nil,
                         mockStore: mockStore,
                         tutorialMode: true,
                         showReminderSheetBinding: $showReminderSheet,
-                        onMoveDrawingRequested: {
+                        onMoveDrawingRequested: { _ in
                             handleMoveDrawingRequested()
                         },
                         disableDrawingTap: isMoveDrawingStep
