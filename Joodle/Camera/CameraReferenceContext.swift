@@ -18,6 +18,40 @@ enum CameraReferenceMode: Equatable {
   case live
 }
 
+/// Pure geometry for positioning the tracing-reference photo. The photo is a
+/// square drawn `scaledToFill` into the `CANVAS_SIZE` square, then
+/// `scaleEffect` → `rotationEffect` → `offset` (offset applies in screen
+/// space). A caseless enum of free functions — not actor-isolated like
+/// `CameraReferenceContext` — so the math is directly unit-testable.
+enum PhotoBackdropGeometry {
+  /// Minimum scale at which a square photo rotated by `rotation` still fully
+  /// covers the square canvas: `|cos θ| + |sin θ|` (1 at 0°/90°, √2 at 45°).
+  static func coverZoom(rotation: Angle) -> CGFloat {
+    let theta = rotation.radians
+    return CGFloat(abs(cos(theta)) + abs(sin(theta)))
+  }
+
+  /// Scale actually rendered: the user's zoom, boosted just enough that a
+  /// rotated photo never reveals the white base at the canvas corners.
+  /// Render-time only — the user's zoom is never mutated, so rotating back
+  /// relaxes the boost.
+  static func effectiveZoom(zoom: CGFloat, rotation: Angle) -> CGFloat {
+    max(zoom, coverZoom(rotation: rotation))
+  }
+
+  /// Largest symmetric per-axis translation (canvas points) that keeps the
+  /// scaled + rotated photo covering the whole canvas square, i.e. up to the
+  /// photo's own edges. Zero whenever the photo only just covers (1× zoom at
+  /// any rotation); `(canvasSize/2)·(zoom − 1)` when unrotated.
+  static func translationRange(
+    zoom: CGFloat, rotation: Angle, canvasSize: CGFloat = CANVAS_SIZE
+  ) -> CGFloat {
+    let cover = coverZoom(rotation: rotation)
+    let effective = effectiveZoom(zoom: zoom, rotation: rotation)
+    return canvasSize / 2 * max(0, effective / cover - 1)
+  }
+}
+
 @MainActor
 final class CameraReferenceContext: ObservableObject {
   @Published var mode: CameraReferenceMode = .idle
@@ -261,9 +295,42 @@ final class CameraReferenceContext: ObservableObject {
   /// Key detents the photo-zoom slider marks as major ticks.
   static let photoZoomKeyFactors: [CGFloat] = [1, 2, 3]
 
+  /// Render-time zoom for the reference photo — the user's zoom plus the
+  /// auto-cover boost that keeps a rotated photo covering the canvas corners.
+  var backdropEffectiveZoom: CGFloat {
+    PhotoBackdropGeometry.effectiveZoom(zoom: backdropZoom, rotation: backdropRotation)
+  }
+
+  /// Per-axis translation bound for the current zoom/rotation — how far the
+  /// photo can be nudged before its edge would cross into the canvas.
+  var backdropTranslationRange: CGFloat {
+    PhotoBackdropGeometry.translationRange(zoom: backdropZoom, rotation: backdropRotation)
+  }
+
   /// Clamps and stores the reference-photo zoom (the slider's `onChange` target).
   func setBackdropZoom(_ zoom: CGFloat) {
     backdropZoom = min(max(zoom, Self.photoZoomRange.lowerBound), Self.photoZoomRange.upperBound)
+    clampBackdropOffset()
+  }
+
+  /// Stores the reference-photo rotation (the dial's `onChange` target).
+  func setBackdropRotation(_ rotation: Angle) {
+    backdropRotation = rotation
+    clampBackdropOffset()
+  }
+
+  /// Re-clamps the offset into the current translation bound. Zooming out or
+  /// rotating shrinks the bound, so an offset set earlier could otherwise
+  /// leave the photo revealing the white base past its edge.
+  private func clampBackdropOffset() {
+    let range = backdropTranslationRange
+    let clamped = CGSize(
+      width: min(max(backdropOffset.width, -range), range),
+      height: min(max(backdropOffset.height, -range), range)
+    )
+    if clamped != backdropOffset {
+      backdropOffset = clamped
+    }
   }
 
   /// Recenters the reference photo — 1.0 zoom, no offset, no rotation. Called

@@ -310,6 +310,7 @@ struct DrawingCanvasView: View {
           backdropZoom: isCameraFeatureActive ? cameraContext.backdropZoom : 1.0,
           backdropOffset: isCameraFeatureActive ? cameraContext.backdropOffset : .zero,
           backdropRotation: isCameraFeatureActive ? cameraContext.backdropRotation : .zero,
+          backdropDentProgress: showPhotoAdjustControls ? 1 : 0,
           liveCameraSession: cameraSession,
           liveCameraDevice: cameraDevice,
           isCameraLive: isCameraLive,
@@ -353,19 +354,22 @@ struct DrawingCanvasView: View {
         }
         .fixedSize(horizontal: false, vertical: true)
 
-        // Rotation ruler — a creased arc flush under the canvas, its curve
-        // concentric with the canvas corners. Scrubbing drives continuous
-        // (unclamped) photo rotation.
+        // Rotation dial — a polaroid-style wheel seated in the slot dented
+        // into the canvas's bottom edge. It occupies only its exposed lower
+        // arc in this stack (so it rides the canvas's bottom edge wherever it
+        // lands), draws the full wheel overflowing upward, and sits below the
+        // canvas in z-order so the hidden part tucks behind it. Scrubbing
+        // drives continuous (unclamped) photo rotation.
         if showPhotoAdjustControls {
-          PhotoRotationRuler(
+          PhotoRotationDial(
             rotation: cameraContext.backdropRotation,
-            canvasCornerRadius: canvasCornerRadius,
-            width: CANVAS_SIZE,
-            onRotationChange: { cameraContext.backdropRotation = $0 }
+            onRotationChange: { cameraContext.setBackdropRotation($0) }
           )
+          .zIndex(-1)
           .transition(.opacity)
         }
         }
+        .animation(.easeInOut(duration: 0.25), value: showPhotoAdjustControls)
 
         // Inspiration prompt text — centered, below the canvas (hidden in tutorial mode)
         if !isMockMode, let prompt = currentPrompt, !isCameraLive {

@@ -508,9 +508,12 @@ struct ContentView: View {
       // in its own ruler flush under the canvas (see DrawingCanvasView).
       VStack {
         Spacer()
+        // Travel bound tracks zoom + rotation: zero at 1× (the photo exactly
+        // covers the canvas, so there's nothing to reveal), opening up to the
+        // photo's own edges as the user zooms in.
         PhotoTranslationPad(
           offset: cameraContext.backdropOffset,
-          translationRange: CANVAS_SIZE * 0.6,
+          translationRange: cameraContext.backdropTranslationRange,
           onOffsetChange: { cameraContext.backdropOffset = $0 }
         )
         .padding(.bottom, 24)

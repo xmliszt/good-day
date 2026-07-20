@@ -460,6 +460,14 @@ struct DynamicIslandExpandedView<Content: View>: View {
         .animation(isExpanded ? DIConfig.expandSpring : DIConfig.heightLeadSpring, value: isExpanded)
         // Tap gesture to absorb tap in the visible container to prevent dismiss
         .onTapGesture {}
+        // Absorb every other touch sequence over the container, not just taps:
+        // the hit region spans the full container shape (transparent regions
+        // included) and the zero-distance drag claims presses/drags for the
+        // container, so touch-downs can never fall through and flash a pressed
+        // state on a button sitting behind the expanded view. Simultaneous, so
+        // the canvas's own drawing gesture and buttons are unaffected.
+        .contentShape(containerShape)
+        .simultaneousGesture(DragGesture(minimumDistance: 0).onChanged { _ in })
 
         // Spacer to push the actual visible content to the top
         Spacer()
