@@ -503,9 +503,38 @@ struct ContentView: View {
       .allowsHitTesting(showPhotoAdjust)
       .animation(.easeOut(duration: 0.28), value: showPhotoAdjust)
 
+      // Rotation bar — a compact straighten-ruler pill tucked directly below
+      // the photo-zoom slider, following the same handedness edge. Scrubbing
+      // right rotates the reference clockwise, left counterclockwise; the drag
+      // keeps tracking once it leaves the pill, so the compact window scrubs
+      // an unbounded range.
+      HStack(spacing: 0) {
+        if zoomSliderEdge == .leading {
+          PhotoRotationBar(
+            rotation: cameraContext.backdropRotation,
+            onRotationChange: { cameraContext.setBackdropRotation($0) }
+          )
+        }
+        Spacer(minLength: 0)
+        if zoomSliderEdge == .trailing {
+          PhotoRotationBar(
+            rotation: cameraContext.backdropRotation,
+            onRotationChange: { cameraContext.setBackdropRotation($0) }
+          )
+        }
+      }
+      .padding(.horizontal, 8)
+      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+      .padding(.bottom, 28)
+      .ignoresSafeArea()
+      .opacity(showPhotoAdjust ? 1 : 0)
+      .offset(x: showPhotoAdjust ? 0 : (zoomSliderEdge == .trailing ? 140 : -140))
+      .allowsHitTesting(showPhotoAdjust)
+      .animation(.easeOut(duration: 0.28), value: showPhotoAdjust)
+
       // Native-Camera-style 2-axis translation pad, centered above the bottom
-      // edge (the same footprint the live shutter occupies). Rotation now lives
-      // in its own ruler flush under the canvas (see DrawingCanvasView).
+      // edge (the same footprint the live shutter occupies). Rotation lives in
+      // the straighten pill under the zoom slider above.
       VStack {
         Spacer()
         // Travel bound tracks zoom + rotation: zero at 1× (the photo exactly

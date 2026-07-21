@@ -96,10 +96,6 @@ struct SharedCanvasView<TrailingHeader: View>: View {
   var backdropZoom: CGFloat = 1.0
   var backdropOffset: CGSize = .zero
   var backdropRotation: Angle = .zero
-  /// How far the rotation-dial slot in the canvas's bottom edge is open
-  /// (0 = plain rounded rect, 1 = fully open). Driven by the parent while the
-  /// photo-adjust controls are showing, animating in step with the dial.
-  var backdropDentProgress: CGFloat = 0
   /// When set and `isCameraLive` is true, shows a live camera preview filling the canvas.
   var liveCameraSession: AVCaptureSession? = nil
   /// Active capture device — drives the preview's rotation coordinator so
@@ -203,7 +199,6 @@ struct SharedCanvasView<TrailingHeader: View>: View {
     backdropZoom: CGFloat = 1.0,
     backdropOffset: CGSize = .zero,
     backdropRotation: Angle = .zero,
-    backdropDentProgress: CGFloat = 0,
     liveCameraSession: AVCaptureSession? = nil,
     liveCameraDevice: AVCaptureDevice? = nil,
     isCameraLive: Bool = false,
@@ -236,7 +231,6 @@ struct SharedCanvasView<TrailingHeader: View>: View {
     self.backdropZoom = backdropZoom
     self.backdropOffset = backdropOffset
     self.backdropRotation = backdropRotation
-    self.backdropDentProgress = backdropDentProgress
     self.liveCameraSession = liveCameraSession
     self.liveCameraDevice = liveCameraDevice
     self.isCameraLive = isCameraLive
@@ -650,16 +644,14 @@ struct SharedCanvasView<TrailingHeader: View>: View {
         }
         .compositingGroup()
         .frame(width: CANVAS_SIZE, height: CANVAS_SIZE)
-        // Mask shape carries the (usually closed) rotation-dial slot in its
-        // bottom edge — a plain continuous rounded rect at dentProgress 0.
         .mask(
-          DialSlotCanvasShape(cornerRadius: canvasCornerRadius, dentProgress: backdropDentProgress)
+          RoundedRectangle(cornerRadius: canvasCornerRadius, style: .continuous)
             .frame(width: CANVAS_SIZE, height: CANVAS_SIZE)
         )
 
         // Border drawn on top of the clipped container so it remains visible
         // above the shutter / preview / inner shadow.
-        DialSlotCanvasShape(cornerRadius: canvasCornerRadius, dentProgress: backdropDentProgress)
+        RoundedRectangle(cornerRadius: canvasCornerRadius, style: .continuous)
           .strokeBorder(.borderColor, lineWidth: 1.0)
           .frame(width: CANVAS_SIZE, height: CANVAS_SIZE)
           .allowsHitTesting(false)
