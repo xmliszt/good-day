@@ -264,11 +264,13 @@ struct PhotoTranslationPad: View {
 /// A rotary dial bezel that wraps the translation pad like the rotation ring on
 /// an old polaroid camera. It renders a black plate sized to sit *behind* the
 /// pad (`innerSide`) with a `bandWidth`-wide ring exposed all the way around;
-/// accent-lit creases follow the rounded-rect band and scroll as the dial
-/// turns. Turning is angular: the finger's angle around the center drives the
-/// rotation (finger clockwise → photo clockwise), unbounded across full turns.
-/// Each crease crossing fires the shared haptic + click; double-tapping the
-/// band levels the photo back to 0°.
+/// uniform accent creases follow the rounded-rect band and scroll as the dial
+/// turns, and an accent-filled indicator dot painted at the band's top center
+/// rides the rotating surface — it travels along the band (right as the photo
+/// turns clockwise) to show how far the dial has turned. Turning is angular: the
+/// finger's angle around the center drives the rotation (finger clockwise →
+/// photo clockwise), unbounded across full turns. Each crease crossing fires the
+/// shared haptic + click; double-tapping the band levels the photo back to 0°.
 struct PhotoRotationDial: View {
   /// Current photo rotation (unbounded — the dial can be spun any number of turns).
   var rotation: Angle
@@ -283,8 +285,6 @@ struct PhotoRotationDial: View {
   private let innerCornerRadius: CGFloat = 30
   /// Target spacing between creases along the band's mid contour (points).
   private let creaseSpacing: CGFloat = 13
-  /// Every this-many creases is a longer, brighter major crease.
-  private let majorEvery: Int = 5
 
   /// Finger angle (radians, atan2 in the view's y-down space) at the previous
   /// drag frame, so per-frame angular deltas accumulate into unbounded rotation.
@@ -356,18 +356,16 @@ struct PhotoRotationDial: View {
       lineWidth: 1
     )
 
-    // Creases: sampled at even arc-length steps around the band's mid contour,
-    // scrolling by the current rotation so the dial visibly turns. Each crease
-    // is a short segment across the band along the local outward normal; longer
-    // and brighter every `majorEvery`.
+    // Creases: uniform short ticks sampled at even arc-length steps around the
+    // band's mid contour, scrolling by the current rotation so the dial visibly
+    // turns. Each is a segment across the band along the local outward normal.
     let scroll = CGFloat(rotation.degrees / 360) * perimeter
     context.drawLayer { layer in
       layer.addFilter(.shadow(color: accent.opacity(0.9), radius: 3))
+      let reach = bandWidth * 0.24
       for k in 0..<count {
         let d = CGFloat(k) / CGFloat(count) * perimeter + scroll
         let sample = outline.sample(at: d)
-        let isMajor = k % majorEvery == 0
-        let reach = bandWidth * (isMajor ? 0.34 : 0.22)
         let p0 = CGPoint(
           x: sample.point.x - sample.normal.dx * reach,
           y: sample.point.y - sample.normal.dy * reach)
@@ -379,10 +377,25 @@ struct PhotoRotationDial: View {
         crease.addLine(to: p1)
         layer.stroke(
           crease,
-          with: .color(accent.opacity(isMajor ? 0.95 : 0.55)),
-          style: StrokeStyle(lineWidth: isMajor ? 2.4 : 1.4, lineCap: .round)
-        )
+          with: .color(accent.opacity(0.6)),
+          style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
       }
+    }
+
+    // Rotation indicator — an accent-filled dot painted on the band at the top
+    // center. It rides the rotating surface (same `scroll` as the creases), so
+    // it travels along the band — right as the photo turns clockwise — and marks
+    // how far the dial has turned. Top-center sits at arc-length `straightHalf`
+    // from the outline's start (the top edge's left end).
+    let topCenterDistance = midSide / 2 - midRadius
+    let indicator = outline.sample(at: topCenterDistance + scroll)
+    let dotRadius = bandWidth * 0.3
+    let dotRect = CGRect(
+      x: indicator.point.x - dotRadius, y: indicator.point.y - dotRadius,
+      width: dotRadius * 2, height: dotRadius * 2)
+    context.drawLayer { layer in
+      layer.addFilter(.shadow(color: accent.opacity(0.9), radius: 5))
+      layer.fill(Circle().path(in: dotRect), with: .color(accent))
     }
   }
 
@@ -411,7 +424,7 @@ struct PhotoRotationDial: View {
         let index = Int((newDegrees / step).rounded())
         if index != lastTickIndex {
           lastTickIndex = index
-          Haptic.playTick(major: index % majorEvery == 0)
+          Haptic.playTick(major: false)
         }
 
         onRotationChange(.degrees(newDegrees))
