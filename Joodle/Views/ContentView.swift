@@ -503,48 +503,27 @@ struct ContentView: View {
       .allowsHitTesting(showPhotoAdjust)
       .animation(.easeOut(duration: 0.28), value: showPhotoAdjust)
 
-      // Rotation bar — a compact straighten-ruler pill tucked directly below
-      // the photo-zoom slider, following the same handedness edge. Scrubbing
-      // right rotates the reference clockwise, left counterclockwise; the drag
-      // keeps tracking once it leaves the pill, so the compact window scrubs
-      // an unbounded range.
-      HStack(spacing: 0) {
-        if zoomSliderEdge == .leading {
-          PhotoRotationBar(
-            rotation: cameraContext.backdropRotation,
-            onRotationChange: { cameraContext.setBackdropRotation($0) }
-          )
-        }
-        Spacer(minLength: 0)
-        if zoomSliderEdge == .trailing {
-          PhotoRotationBar(
-            rotation: cameraContext.backdropRotation,
-            onRotationChange: { cameraContext.setBackdropRotation($0) }
-          )
-        }
-      }
-      .padding(.horizontal, 8)
-      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-      .padding(.bottom, 28)
-      .ignoresSafeArea()
-      .opacity(showPhotoAdjust ? 1 : 0)
-      .offset(x: showPhotoAdjust ? 0 : (zoomSliderEdge == .trailing ? 140 : -140))
-      .allowsHitTesting(showPhotoAdjust)
-      .animation(.easeOut(duration: 0.28), value: showPhotoAdjust)
-
-      // Native-Camera-style 2-axis translation pad, centered above the bottom
-      // edge (the same footprint the live shutter occupies). Rotation lives in
-      // the straighten pill under the zoom slider above.
+      // Native-Camera-style 2-axis translation pad wrapped by the rotation
+      // dial, centered above the bottom edge. The dial is a polaroid-style bezel
+      // that hugs the pad's perimeter and sits z-behind it, so only the ring
+      // around the pad is exposed for turning. Travel bound tracks zoom +
+      // rotation: zero at 1× (the photo exactly covers the canvas, so there's
+      // nothing to reveal), opening up to the photo's own edges as the user
+      // zooms in.
       VStack {
         Spacer()
-        // Travel bound tracks zoom + rotation: zero at 1× (the photo exactly
-        // covers the canvas, so there's nothing to reveal), opening up to the
-        // photo's own edges as the user zooms in.
-        PhotoTranslationPad(
-          offset: cameraContext.backdropOffset,
-          translationRange: cameraContext.backdropTranslationRange,
-          onOffsetChange: { cameraContext.backdropOffset = $0 }
-        )
+        ZStack {
+          PhotoRotationDial(
+            rotation: cameraContext.backdropRotation,
+            onRotationChange: { cameraContext.setBackdropRotation($0) },
+            innerSide: PhotoTranslationPad.containerSide
+          )
+          PhotoTranslationPad(
+            offset: cameraContext.backdropOffset,
+            translationRange: cameraContext.backdropTranslationRange,
+            onOffsetChange: { cameraContext.backdropOffset = $0 }
+          )
+        }
         .padding(.bottom, 24)
       }
       .ignoresSafeArea(.container, edges: .bottom)

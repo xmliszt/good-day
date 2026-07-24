@@ -11,12 +11,13 @@
 //    point glides back to center while the glow fades out. The glow bleeds all
 //    the way to the container's continuous rounded corners.
 //
-//  • `PhotoRotationBar` — a compact horizontal ruler pill tucked right below
-//    the photo-zoom slider at the same handedness edge (Instagram/Apple-Photos
-//    straighten-ruler style): black capsule, hairline outline, glowing accent
-//    tick marks that scroll with the value. Scrubbing right rotates the photo
-//    clockwise, left counterclockwise; the drag keeps tracking past the pill's
-//    bounds, and each tick crossing fires the shared haptic + click.
+//  • `PhotoRotationDial` — a rotary dial bezel that wraps the translation pad
+//    like the rotation ring on an old polaroid camera. It sits z-behind the pad;
+//    only the band around the (shrunk) pad is exposed. Accent-lit creases run
+//    around the band and scroll as the dial turns. Grab the ring and turn it —
+//    the finger's angle around the center drives the photo's rotation (finger
+//    clockwise → photo clockwise), unbounded across full turns; each crease
+//    crossing fires the shared haptic + click, and double-tapping levels to 0°.
 //
 //  Both are purely presentational — they render the current value and report
 //  new ones through callbacks. Double-tapping resets (recenter / level).
@@ -35,11 +36,12 @@ struct PhotoTranslationPad: View {
   var translationRange: CGFloat
   var onOffsetChange: (CGSize) -> Void
 
-  private static let padSide: CGFloat = 208
+  // Shrunk from its solo size so the rotation dial's band has room to wrap the
+  // pad's perimeter without growing the overall footprint much.
+  private static let padSide: CGFloat = 160
   private static let containerPadding: CGFloat = 14
   /// Full square footprint of the pad including its container padding — shared
-  /// with `PhotoRotationBar` so it can size itself into the pocket between the
-  /// pad's edge and the screen edge.
+  /// with `PhotoRotationDial` so its band can wrap concentrically around the pad.
   static var containerSide: CGFloat { padSide + containerPadding * 2 }
 
   private let containerCornerRadius: CGFloat = 30
@@ -257,124 +259,165 @@ struct PhotoTranslationPad: View {
   }
 }
 
-// MARK: - Rotation bar
+// MARK: - Rotation dial
 
-/// A compact horizontal straighten-ruler pill (Instagram / Apple Photos
-/// style): a black capsule with a hairline outline and glowing theme-accent
-/// tick marks that scroll with the rotation. Scrubbing right rotates the
-/// photo clockwise, left counterclockwise; the ruler follows the finger and
-/// the drag keeps tracking once it leaves the pill, so the compact window
-/// still scrubs an unbounded range. Each tick crossing fires the shared
-/// haptic + click; double-tapping levels back to 0°.
-struct PhotoRotationBar: View {
-  /// Current photo rotation (unbounded — scrubbing continues indefinitely).
+/// A rotary dial bezel that wraps the translation pad like the rotation ring on
+/// an old polaroid camera. It renders a black plate sized to sit *behind* the
+/// pad (`innerSide`) with a `bandWidth`-wide ring exposed all the way around;
+/// accent-lit creases follow the rounded-rect band and scroll as the dial
+/// turns. Turning is angular: the finger's angle around the center drives the
+/// rotation (finger clockwise → photo clockwise), unbounded across full turns.
+/// Each crease crossing fires the shared haptic + click; double-tapping the
+/// band levels the photo back to 0°.
+struct PhotoRotationDial: View {
+  /// Current photo rotation (unbounded — the dial can be spun any number of turns).
   var rotation: Angle
   var onRotationChange: (Angle) -> Void
+  /// Side of the (square) translation-pad container this dial wraps.
+  var innerSide: CGFloat
+  /// Width of the exposed ring around the pad.
+  var bandWidth: CGFloat = 30
 
-  private let barHeight: CGFloat = 40
-  /// Horizontal points per degree of rotation — sets tick spacing.
-  private let pointsPerDegree: CGFloat = 4
-  /// Tick every this many degrees.
-  private let tickStepDegrees: Double = 2
-  /// Longer, brighter tick every this many degrees.
-  private let majorStepDegrees: Double = 10
-  private let minorTickLength: CGFloat = 10
-  private let majorTickLength: CGFloat = 16
+  /// Corner radius of the pad container — the band's inner contour matches it so
+  /// the ring reads as concentric with the pad.
+  private let innerCornerRadius: CGFloat = 30
+  /// Target spacing between creases along the band's mid contour (points).
+  private let creaseSpacing: CGFloat = 13
+  /// Every this-many creases is a longer, brighter major crease.
+  private let majorEvery: Int = 5
 
-  /// Rotation (deg) captured at drag start, so movement is relative.
-  @State private var dragAnchorDegrees: Double?
-  /// Last tick index crossed, so a tick fires once per crossing.
+  /// Finger angle (radians, atan2 in the view's y-down space) at the previous
+  /// drag frame, so per-frame angular deltas accumulate into unbounded rotation.
+  @State private var lastAngle: CGFloat?
+  /// Rotation (deg) captured at drag start; the accumulated finger sweep adds to it.
+  @State private var anchorDegrees: Double = 0
+  /// Signed finger sweep (deg) since drag start.
+  @State private var sweptDegrees: Double = 0
+  /// Last crease index crossed, so a tick fires once per crossing.
   @State private var lastTickIndex: Int = .min
   /// End time of the last tap-like touch, for the manual double-tap-to-level
-  /// detection (same rationale as the pad: a simultaneous `TapGesture` races
-  /// the zero-distance drag's trailing events and can lose the reset).
+  /// detection (same rationale as the pad: a simultaneous `TapGesture` races the
+  /// zero-distance drag's trailing events and can lose the reset).
   @State private var lastTapEndedAt: Date?
+
+  private var outerSide: CGFloat { innerSide + bandWidth * 2 }
+  private var outerCornerRadius: CGFloat { innerCornerRadius + bandWidth }
 
   private static var darkAccent: Color {
     Color(UIColor(.appAccent).resolvedColor(with: UITraitCollection(userInterfaceStyle: .dark)))
   }
 
-  /// Pill width — sized into the pocket between the translation pad's edge and
-  /// the screen edge so the two never collide, with a usable floor (the drag
-  /// keeps tracking past the pill anyway).
-  private var barWidth: CGFloat {
-    let pocket = (UIScreen.main.bounds.width - PhotoTranslationPad.containerSide) / 2 - 14
-    return max(56, min(84, pocket))
+  /// Number of creases around the band. Chosen so they tile the closed loop
+  /// evenly and scroll exactly once per full turn — which also fixes the haptic
+  /// cadence at `360 / creaseCount` degrees per crease.
+  private var creaseCount: Int {
+    let midSide = innerSide + bandWidth
+    let midRadius = innerCornerRadius + bandWidth / 2
+    let perimeter = RoundedRectOutline.perimeter(side: midSide, cornerRadius: midRadius)
+    return max(4, Int((perimeter / creaseSpacing).rounded()))
   }
 
   var body: some View {
     Canvas(opaque: false) { context, size in
-      drawRuler(context, size: size)
+      drawDial(context, size: size)
     }
-    .frame(width: barWidth, height: barHeight)
-    .background(Capsule(style: .continuous).fill(Color.black))
-    .clipShape(Capsule(style: .continuous))
-    .overlay(
-      Capsule(style: .continuous)
-        .stroke(Color.white.opacity(0.2), lineWidth: 1)
+    .frame(width: outerSide, height: outerSide)
+    .background(
+      RoundedRectangle(cornerRadius: outerCornerRadius, style: .continuous)
+        .fill(Color.black)
     )
-    .contentShape(Capsule(style: .continuous))
-    .gesture(barDrag)
+    .clipShape(RoundedRectangle(cornerRadius: outerCornerRadius, style: .continuous))
+    .overlay(
+      RoundedRectangle(cornerRadius: outerCornerRadius, style: .continuous)
+        .stroke(Color.white.opacity(0.12), lineWidth: 1)
+    )
+    .contentShape(RoundedRectangle(cornerRadius: outerCornerRadius, style: .continuous))
+    .gesture(dialDrag)
   }
 
-  private func drawRuler(_ context: GraphicsContext, size: CGSize) {
-    let mid = size.width / 2
-    let midY = size.height / 2
+  private func drawDial(_ context: GraphicsContext, size: CGSize) {
+    let center = CGPoint(x: size.width / 2, y: size.height / 2)
+    let midSide = innerSide + bandWidth
+    let midRadius = innerCornerRadius + bandWidth / 2
+    let outline = RoundedRectOutline(side: midSide, cornerRadius: midRadius, center: center)
+    let perimeter = outline.perimeter
+    let count = creaseCount
     let accent = Self.darkAccent
-    let rot = rotation.degrees
 
-    // Values visible in the pill window. Ruler follows the finger: the tick
-    // for value v sits at mid + (rot − v)·ppd, so dragging right (rot rising,
-    // clockwise) sweeps the ticks rightward with the finger.
-    let halfSpanDegrees = Double(mid / pointsPerDegree)
-    let firstTick = Int(((rot - halfSpanDegrees) / tickStepDegrees).rounded(.down))
-    let lastTick = Int(((rot + halfSpanDegrees) / tickStepDegrees).rounded(.up))
-    let majorEvery = Int((majorStepDegrees / tickStepDegrees).rounded())
-    guard lastTick >= firstTick else { return }
+    // Faint groove where the band meets the pad, so the ring reads as a bezel
+    // sunk behind the panel.
+    let innerRect = CGRect(
+      x: center.x - innerSide / 2, y: center.y - innerSide / 2,
+      width: innerSide, height: innerSide
+    )
+    context.stroke(
+      RoundedRectangle(cornerRadius: innerCornerRadius, style: .continuous).path(in: innerRect),
+      with: .color(.white.opacity(0.06)),
+      lineWidth: 1
+    )
 
-    // One layer with a shadow filter so every tick glows in the accent color.
+    // Creases: sampled at even arc-length steps around the band's mid contour,
+    // scrolling by the current rotation so the dial visibly turns. Each crease
+    // is a short segment across the band along the local outward normal; longer
+    // and brighter every `majorEvery`.
+    let scroll = CGFloat(rotation.degrees / 360) * perimeter
     context.drawLayer { layer in
       layer.addFilter(.shadow(color: accent.opacity(0.9), radius: 3))
-      for t in firstTick...lastTick {
-        let value = Double(t) * tickStepDegrees
-        let x = mid + CGFloat(rot - value) * pointsPerDegree
-        // Fade ticks toward the pill's ends for the soft-edge ruler feel.
-        let fade = max(0, 1 - pow(abs(x - mid) / mid, 1.7))
-        if fade <= 0.02 { continue }
-        let isMajor = t % majorEvery == 0
-        let length = isMajor ? majorTickLength : minorTickLength
-        var tick = Path()
-        tick.move(to: CGPoint(x: x, y: midY - length / 2))
-        tick.addLine(to: CGPoint(x: x, y: midY + length / 2))
+      for k in 0..<count {
+        let d = CGFloat(k) / CGFloat(count) * perimeter + scroll
+        let sample = outline.sample(at: d)
+        let isMajor = k % majorEvery == 0
+        let reach = bandWidth * (isMajor ? 0.34 : 0.22)
+        let p0 = CGPoint(
+          x: sample.point.x - sample.normal.dx * reach,
+          y: sample.point.y - sample.normal.dy * reach)
+        let p1 = CGPoint(
+          x: sample.point.x + sample.normal.dx * reach,
+          y: sample.point.y + sample.normal.dy * reach)
+        var crease = Path()
+        crease.move(to: p0)
+        crease.addLine(to: p1)
         layer.stroke(
-          tick,
-          with: .color(accent.opacity((isMajor ? 0.9 : 0.5) * fade)),
-          style: StrokeStyle(lineWidth: isMajor ? 2 : 1.3, lineCap: .round)
+          crease,
+          with: .color(accent.opacity(isMajor ? 0.95 : 0.55)),
+          style: StrokeStyle(lineWidth: isMajor ? 2.4 : 1.4, lineCap: .round)
         )
       }
     }
   }
 
-  private var barDrag: some Gesture {
+  private var dialDrag: some Gesture {
     DragGesture(minimumDistance: 0)
       .onChanged { value in
-        let anchor = dragAnchorDegrees ?? rotation.degrees
-        if dragAnchorDegrees == nil { dragAnchorDegrees = anchor }
-        // Swipe right → clockwise (positive degrees), swipe left →
-        // counterclockwise; the ruler ticks sweep along with the finger.
-        let newDegrees = anchor + Double(value.translation.width) / Double(pointsPerDegree)
+        let center = outerSide / 2
+        let angle = atan2(value.location.y - center, value.location.x - center)
+        if lastAngle == nil {
+          lastAngle = angle
+          anchorDegrees = rotation.degrees
+          sweptDegrees = 0
+        } else if let last = lastAngle {
+          var delta = angle - last
+          // Shortest-arc wrap so crossing the ±π seam doesn't jump a full turn.
+          if delta > .pi { delta -= 2 * .pi }
+          if delta < -.pi { delta += 2 * .pi }
+          sweptDegrees += Double(delta) * 180 / .pi
+          lastAngle = angle
+        }
+        let newDegrees = anchorDegrees + sweptDegrees
 
-        let index = Int((newDegrees / tickStepDegrees).rounded())
+        // One click per crease crossing — creases scroll once per full turn, so
+        // a crease passes the reference every 360/creaseCount degrees.
+        let step = 360.0 / Double(creaseCount)
+        let index = Int((newDegrees / step).rounded())
         if index != lastTickIndex {
           lastTickIndex = index
-          let major = index % Int((majorStepDegrees / tickStepDegrees).rounded()) == 0
-          Haptic.playTick(major: major)
+          Haptic.playTick(major: index % majorEvery == 0)
         }
 
         onRotationChange(.degrees(newDegrees))
       }
       .onEnded { value in
-        dragAnchorDegrees = nil
+        lastAngle = nil
         // Manual double-tap detection: two barely-moved touches in quick
         // succession level the photo back to 0°.
         let isTap = hypot(value.translation.width, value.translation.height) < 10
@@ -389,6 +432,110 @@ struct PhotoRotationBar: View {
           lastTapEndedAt = isTap ? Date() : nil
         }
       }
+  }
+}
+
+// MARK: - Rounded-rect outline
+
+/// Analytic arc-length parametrization of a centered *square* rounded-rect
+/// outline, used to place the rotation dial's creases evenly around the band and
+/// give each a correct outward unit normal. Walks clockwise from the top edge's
+/// left end: top edge → TR corner → right edge → BR corner → bottom edge → BL
+/// corner → left edge → TL corner.
+private struct RoundedRectOutline {
+  let center: CGPoint
+  /// Half-length of each straight run (side/2 − cornerRadius).
+  let straightHalf: CGFloat
+  let cornerRadius: CGFloat
+  /// Half the side length.
+  let half: CGFloat
+
+  init(side: CGFloat, cornerRadius: CGFloat, center: CGPoint) {
+    self.center = center
+    self.cornerRadius = cornerRadius
+    self.half = side / 2
+    self.straightHalf = side / 2 - cornerRadius
+  }
+
+  private var edgeLen: CGFloat { straightHalf * 2 }
+  private var cornerLen: CGFloat { cornerRadius * .pi / 2 }
+  var perimeter: CGFloat { edgeLen * 4 + cornerLen * 4 }
+
+  static func perimeter(side: CGFloat, cornerRadius: CGFloat) -> CGFloat {
+    let straightHalf = side / 2 - cornerRadius
+    return straightHalf * 2 * 4 + cornerRadius * .pi / 2 * 4
+  }
+
+  struct Sample {
+    let point: CGPoint
+    let normal: CGVector
+  }
+
+  /// Point + outward unit normal at arc-length `rawD`, wrapped into the outline.
+  func sample(at rawD: CGFloat) -> Sample {
+    let p = perimeter
+    var d = rawD.truncatingRemainder(dividingBy: p)
+    if d < 0 { d += p }
+    let e = edgeLen
+    let c = cornerLen
+
+    func pt(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
+      CGPoint(x: center.x + x, y: center.y + y)
+    }
+
+    // 1. Top edge
+    if d < e {
+      return Sample(point: pt(-straightHalf + d, -half), normal: CGVector(dx: 0, dy: -1))
+    }
+    d -= e
+    // 2. Top-right corner (−90°→0°)
+    if d < c {
+      let phi = -CGFloat.pi / 2 + d / cornerRadius
+      let n = CGVector(dx: cos(phi), dy: sin(phi))
+      return Sample(
+        point: pt(straightHalf + cornerRadius * n.dx, -straightHalf + cornerRadius * n.dy),
+        normal: n)
+    }
+    d -= c
+    // 3. Right edge
+    if d < e {
+      return Sample(point: pt(half, -straightHalf + d), normal: CGVector(dx: 1, dy: 0))
+    }
+    d -= e
+    // 4. Bottom-right corner (0°→90°)
+    if d < c {
+      let phi = d / cornerRadius
+      let n = CGVector(dx: cos(phi), dy: sin(phi))
+      return Sample(
+        point: pt(straightHalf + cornerRadius * n.dx, straightHalf + cornerRadius * n.dy),
+        normal: n)
+    }
+    d -= c
+    // 5. Bottom edge
+    if d < e {
+      return Sample(point: pt(straightHalf - d, half), normal: CGVector(dx: 0, dy: 1))
+    }
+    d -= e
+    // 6. Bottom-left corner (90°→180°)
+    if d < c {
+      let phi = CGFloat.pi / 2 + d / cornerRadius
+      let n = CGVector(dx: cos(phi), dy: sin(phi))
+      return Sample(
+        point: pt(-straightHalf + cornerRadius * n.dx, straightHalf + cornerRadius * n.dy),
+        normal: n)
+    }
+    d -= c
+    // 7. Left edge
+    if d < e {
+      return Sample(point: pt(-half, straightHalf - d), normal: CGVector(dx: -1, dy: 0))
+    }
+    d -= e
+    // 8. Top-left corner (180°→270°)
+    let phi = CGFloat.pi + d / cornerRadius
+    let n = CGVector(dx: cos(phi), dy: sin(phi))
+    return Sample(
+      point: pt(-straightHalf + cornerRadius * n.dx, -straightHalf + cornerRadius * n.dy),
+      normal: n)
   }
 }
 
@@ -408,19 +555,21 @@ struct PhotoRotationBar: View {
   return Host()
 }
 
-#Preview("Rotation bar") {
+#Preview("Rotation dial") {
   struct Host: View {
     @State private var rotation: Angle = .zero
+    @State private var offset: CGSize = .zero
     var body: some View {
       ZStack {
-        Color.black
-        VStack(spacing: 24) {
-          Text(String(format: "%.0f°", rotation.degrees))
-            .foregroundStyle(.white)
-          PhotoRotationBar(
+        LinearGradient(colors: [.gray, .black], startPoint: .top, endPoint: .bottom)
+        ZStack {
+          PhotoRotationDial(
             rotation: rotation,
-            onRotationChange: { rotation = $0 }
+            onRotationChange: { rotation = $0 },
+            innerSide: PhotoTranslationPad.containerSide
           )
+          PhotoTranslationPad(
+            offset: offset, translationRange: 160, onOffsetChange: { offset = $0 })
         }
       }
       .ignoresSafeArea()

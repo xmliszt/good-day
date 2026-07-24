@@ -63,7 +63,7 @@ final class CameraReferenceContext: ObservableObject {
   /// Translation applied to the reference photo, in canvas points. Driven by the
   /// 2-axis scrub pad so the user can nudge the reference left/right/up/down.
   @Published var backdropOffset: CGSize = .zero
-  /// Rotation applied to the reference photo. Driven by the rotation arc.
+  /// Rotation applied to the reference photo. Driven by the rotation dial.
   @Published var backdropRotation: Angle = .zero
   @Published var showPermissionDeniedAlert: Bool = false
   /// Set when a capture couldn't be saved to the album because Photos add-only
