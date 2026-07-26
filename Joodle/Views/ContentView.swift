@@ -233,18 +233,32 @@ struct ContentView: View {
   /// otherwise it retracts. Both rulers drive the same live zoom and the
   /// handedness preference is never written. Broken out of `body` so the main
   /// view expression stays within the SwiftUI type-checker's complexity budget.
+  /// Which edge zoom ruler the temporary control is currently mirroring. Live
+  /// camera and reference-photo adjustment are mutually exclusive and each own a
+  /// separate zoom value, so the token both gates visibility (`.inactive` hides
+  /// the control) and, on any change, resets the in-the-moment reveal — switching
+  /// contexts starts a fresh pull rather than carrying a committed ruler over.
+  private enum TempZoomContext: Equatable {
+    case inactive
+    case liveCamera
+    case referencePhoto
+  }
+
   @ViewBuilder
   private func temporaryZoomSliderOverlay(
-    zoomCaps: CameraZoomCapabilities,
+    context: TempZoomContext,
     defaultEdge: HorizontalEdge,
-    showZoomSlider: Bool
+    zoomFactor: CGFloat,
+    range: ClosedRange<CGFloat>,
+    keyFactors: [CGFloat],
+    onChange: @escaping (CGFloat) -> Void
   ) -> some View {
+    let isShowing = context != .inactive
     let tempEdge: HorizontalEdge = defaultEdge == .trailing ? .leading : .trailing
     // Same off-edge hide distance the default ruler uses to tuck fully away.
     let hiddenOffset: CGFloat = tempEdge == .trailing ? 140 : -140
     // Inward drag distance (points) for the ruler to fully emerge.
     let pullDistance: CGFloat = 120
-    let zoomRange = zoomCaps.minDisplayZoom...max(zoomCaps.minDisplayZoom, zoomCaps.maxDisplayZoom)
 
     Group {
       // The temporary ruler. Its horizontal offset interpolates from fully
@@ -253,33 +267,33 @@ struct ContentView: View {
       HStack(spacing: 0) {
         if tempEdge == .leading {
           CameraZoomSlider(
-            zoomFactor: cameraContext.displayZoomFactor,
-            range: zoomRange,
-            keyFactors: zoomCaps.keyZoomFactors,
+            zoomFactor: zoomFactor,
+            range: range,
+            keyFactors: keyFactors,
             edge: .leading,
-            onChange: { cameraContext.setZoom($0) }
+            onChange: onChange
           )
         }
         Spacer(minLength: 0)
         if tempEdge == .trailing {
           CameraZoomSlider(
-            zoomFactor: cameraContext.displayZoomFactor,
-            range: zoomRange,
-            keyFactors: zoomCaps.keyZoomFactors,
+            zoomFactor: zoomFactor,
+            range: range,
+            keyFactors: keyFactors,
             edge: .trailing,
-            onChange: { cameraContext.setZoom($0) }
+            onChange: onChange
           )
         }
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
       .padding(.bottom, 80)
       .ignoresSafeArea()
-      .opacity(showZoomSlider && tempZoomReveal > 0.001 ? 1 : 0)
+      .opacity(isShowing && tempZoomReveal > 0.001 ? 1 : 0)
       .offset(x: hiddenOffset * (1 - tempZoomReveal))
       // The emerged ruler owns its own zoom drag only once committed; until
       // then the grab strip below is what tracks the pull, so the reveal
       // gesture and the ruler's zoom gesture never fight.
-      .allowsHitTesting(showZoomSlider && tempZoomCommitted)
+      .allowsHitTesting(isShowing && tempZoomCommitted)
 
       // Invisible edge grab band on the non-default edge, hosting a
       // UIScreenEdgePanGestureRecognizer — the platform's own tool for an
@@ -309,13 +323,14 @@ struct ContentView: View {
       .frame(maxWidth: .infinity, maxHeight: .infinity,
              alignment: tempEdge == .leading ? .leading : .trailing)
       .ignoresSafeArea()
-      .allowsHitTesting(showZoomSlider && !tempZoomCommitted)
+      .allowsHitTesting(isShowing && !tempZoomCommitted)
     }
-    // In-the-moment only: clear the temporary control whenever the live zoom
-    // slider is no longer showing (capture, cancel, or the system Camera
-    // Control overlay taking over). Never writes the handedness preference.
-    .onChange(of: showZoomSlider) { _, isShowing in
-      if !isShowing && (tempZoomReveal != 0 || tempZoomCommitted) {
+    // In-the-moment only: clear the temporary control whenever the active zoom
+    // context changes — the ruler goes away (capture, cancel, the system Camera
+    // Control overlay), or the user moves between live camera and photo-adjust.
+    // Never writes the handedness preference.
+    .onChange(of: context) { _, _ in
+      if tempZoomReveal != 0 || tempZoomCommitted {
         tempZoomReveal = 0
         tempZoomCommitted = false
       }
@@ -573,13 +588,37 @@ struct ContentView: View {
       // Dragging inward from the opposite screen edge pulls a second, identical
       // zoom ruler out of that edge at the rate of the finger, so the user can
       // reach whichever side is convenient right now without changing their
-      // handedness preference. Both rulers coexist and drive the same live zoom.
-      // Extracted into its own builder so ContentView.body stays within the
-      // SwiftUI type-checker's complexity budget.
+      // handedness preference. Both rulers coexist and drive the same zoom.
+      // Serves whichever edge ruler is currently up: the live-camera zoom, or
+      // the reference-photo scale once a tracing photo is in the canvas (these
+      // two are mutually exclusive). Extracted into its own builder so
+      // ContentView.body stays within the SwiftUI type-checker's complexity budget.
+      let showPhotoZoom = cameraContext.backdropImage != nil
+        && showDrawingCanvas
+        && !hideDynamicIslandView
+        && cameraContext.mode != .live
+      let tempZoomContext: TempZoomContext = showZoomSlider
+        ? .liveCamera
+        : (showPhotoZoom ? .referencePhoto : .inactive)
       temporaryZoomSliderOverlay(
-        zoomCaps: zoomCaps,
+        context: tempZoomContext,
         defaultEdge: zoomSliderEdge,
-        showZoomSlider: showZoomSlider
+        zoomFactor: tempZoomContext == .referencePhoto
+          ? cameraContext.backdropZoom
+          : cameraContext.displayZoomFactor,
+        range: tempZoomContext == .referencePhoto
+          ? CameraReferenceContext.photoZoomRange
+          : zoomCaps.minDisplayZoom...max(zoomCaps.minDisplayZoom, zoomCaps.maxDisplayZoom),
+        keyFactors: tempZoomContext == .referencePhoto
+          ? CameraReferenceContext.photoZoomKeyFactors
+          : zoomCaps.keyZoomFactors,
+        onChange: { newValue in
+          if tempZoomContext == .referencePhoto {
+            cameraContext.setBackdropZoom(newValue)
+          } else {
+            cameraContext.setZoom(newValue)
+          }
+        }
       )
 
       // Reference-photo adjustment controls — shown once a tracing photo has
