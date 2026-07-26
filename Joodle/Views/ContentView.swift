@@ -82,6 +82,17 @@ struct ContentView: View {
   /// in-canvas preview / top-row controls, and by this view for the
   /// fullscreen blurred backdrop and the bottom shutter overlay.
   @StateObject private var cameraContext = CameraReferenceContext()
+
+  /// Temporary edge-drag zoom control (JOO-147). When the user drags inward from
+  /// the screen edge *opposite* their handedness preference, a second, identical
+  /// zoom ruler is pulled out of that edge. `tempZoomReveal` (0…1) tracks how far
+  /// it has emerged — set live from the drag so it follows the finger — and
+  /// `tempZoomCommitted` records whether a released drag came out far enough to
+  /// stay. Both are in-the-moment view state only; they never touch the
+  /// `cameraZoomSliderHandedness` preference and reset when live mode ends.
+  @State private var tempZoomReveal: CGFloat = 0
+  @State private var tempZoomCommitted: Bool = false
+
   private let headerHeight: CGFloat = 100.0
 
   // Hit testing optimization (O(1) lookup)
@@ -211,6 +222,118 @@ struct ContentView: View {
         self.scrollProxy = nil
       }
       .scrollDisabled(isScrubbing || isPinching)
+    }
+  }
+
+  /// Temporary edge-drag zoom control (JOO-147). Rendered on the edge *opposite*
+  /// the user's handedness preference. A thin invisible grab strip on that edge
+  /// tracks an inward drag into `tempZoomReveal` (0…1), which slides a second,
+  /// identical zoom ruler out of the edge in real time; releasing past the
+  /// halfway point commits it (it stays out and takes over its own zoom drag),
+  /// otherwise it retracts. Both rulers drive the same live zoom and the
+  /// handedness preference is never written. Broken out of `body` so the main
+  /// view expression stays within the SwiftUI type-checker's complexity budget.
+  /// Which edge zoom ruler the temporary control is currently mirroring. Live
+  /// camera and reference-photo adjustment are mutually exclusive and each own a
+  /// separate zoom value, so the token both gates visibility (`.inactive` hides
+  /// the control) and, on any change, resets the in-the-moment reveal — switching
+  /// contexts starts a fresh pull rather than carrying a committed ruler over.
+  private enum TempZoomContext: Equatable {
+    case inactive
+    case liveCamera
+    case referencePhoto
+  }
+
+  @ViewBuilder
+  private func temporaryZoomSliderOverlay(
+    context: TempZoomContext,
+    defaultEdge: HorizontalEdge,
+    zoomFactor: CGFloat,
+    range: ClosedRange<CGFloat>,
+    keyFactors: [CGFloat],
+    onChange: @escaping (CGFloat) -> Void
+  ) -> some View {
+    let isShowing = context != .inactive
+    let tempEdge: HorizontalEdge = defaultEdge == .trailing ? .leading : .trailing
+    // Same off-edge hide distance the default ruler uses to tuck fully away.
+    let hiddenOffset: CGFloat = tempEdge == .trailing ? 140 : -140
+    // Inward drag distance (points) for the ruler to fully emerge.
+    let pullDistance: CGFloat = 120
+
+    Group {
+      // The temporary ruler. Its horizontal offset interpolates from fully
+      // hidden (reveal 0) to flush against the edge (reveal 1), so it tracks
+      // the pull out of the edge in real time.
+      HStack(spacing: 0) {
+        if tempEdge == .leading {
+          CameraZoomSlider(
+            zoomFactor: zoomFactor,
+            range: range,
+            keyFactors: keyFactors,
+            edge: .leading,
+            onChange: onChange
+          )
+        }
+        Spacer(minLength: 0)
+        if tempEdge == .trailing {
+          CameraZoomSlider(
+            zoomFactor: zoomFactor,
+            range: range,
+            keyFactors: keyFactors,
+            edge: .trailing,
+            onChange: onChange
+          )
+        }
+      }
+      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+      .padding(.bottom, 80)
+      .ignoresSafeArea()
+      .opacity(isShowing && tempZoomReveal > 0.001 ? 1 : 0)
+      .offset(x: hiddenOffset * (1 - tempZoomReveal))
+      // The emerged ruler owns its own zoom drag only once committed; until
+      // then the grab strip below is what tracks the pull, so the reveal
+      // gesture and the ruler's zoom gesture never fight.
+      .allowsHitTesting(isShowing && tempZoomCommitted)
+
+      // Invisible edge grab band on the non-default edge, hosting a
+      // UIScreenEdgePanGestureRecognizer — the platform's own tool for an
+      // inward drag that starts at the very screen edge (a pure SwiftUI
+      // DragGesture there loses the touch-down to the system's edge pan). The
+      // band is parked at the edge by the outer frame and only intercepts while
+      // uncommitted, so the emerged ruler takes over its own zoom drag after.
+      ScreenEdgePanCatcher(
+        edge: tempEdge,
+        onChanged: { inward in
+          tempZoomReveal = EdgeDragReveal.revealFraction(
+            inwardTranslation: inward, pullDistance: pullDistance)
+        },
+        onEnded: { inward in
+          let reveal = EdgeDragReveal.revealFraction(
+            inwardTranslation: inward, pullDistance: pullDistance)
+          let commit = EdgeDragReveal.shouldCommit(reveal: reveal)
+          withAnimation(.easeOut(duration: 0.25)) {
+            tempZoomReveal = commit ? 1 : 0
+            tempZoomCommitted = commit
+          }
+          if commit { Haptic.play() }
+        }
+      )
+      .frame(width: 44)
+      .frame(maxHeight: .infinity)
+      .frame(maxWidth: .infinity, maxHeight: .infinity,
+             alignment: tempEdge == .leading ? .leading : .trailing)
+      .ignoresSafeArea()
+      .allowsHitTesting(isShowing && !tempZoomCommitted)
+    }
+    // In-the-moment only: clear the temporary control whenever the active zoom
+    // context changes — the ruler goes away (capture, cancel, the system Camera
+    // Control overlay), or the user moves between live camera and photo-adjust.
+    // Never writes the handedness preference.
+    .onChange(of: context) { _, _ in
+      if tempZoomReveal != 0 || tempZoomCommitted {
+        tempZoomReveal = 0
+        tempZoomCommitted = false
+      }
     }
   }
 
@@ -460,6 +583,43 @@ struct ContentView: View {
       // Ease-out slide out of / back into the screen edge. No bounce: an
       // overshoot would pull the panel inward off the edge and break the morph.
       .animation(.easeOut(duration: 0.28), value: showZoomSlider)
+
+      // Temporary edge-drag zoom control (JOO-147) — on the NON-default edge.
+      // Dragging inward from the opposite screen edge pulls a second, identical
+      // zoom ruler out of that edge at the rate of the finger, so the user can
+      // reach whichever side is convenient right now without changing their
+      // handedness preference. Both rulers coexist and drive the same zoom.
+      // Serves whichever edge ruler is currently up: the live-camera zoom, or
+      // the reference-photo scale once a tracing photo is in the canvas (these
+      // two are mutually exclusive). Extracted into its own builder so
+      // ContentView.body stays within the SwiftUI type-checker's complexity budget.
+      let showPhotoZoom = cameraContext.backdropImage != nil
+        && showDrawingCanvas
+        && !hideDynamicIslandView
+        && cameraContext.mode != .live
+      let tempZoomContext: TempZoomContext = showZoomSlider
+        ? .liveCamera
+        : (showPhotoZoom ? .referencePhoto : .inactive)
+      temporaryZoomSliderOverlay(
+        context: tempZoomContext,
+        defaultEdge: zoomSliderEdge,
+        zoomFactor: tempZoomContext == .referencePhoto
+          ? cameraContext.backdropZoom
+          : cameraContext.displayZoomFactor,
+        range: tempZoomContext == .referencePhoto
+          ? CameraReferenceContext.photoZoomRange
+          : zoomCaps.minDisplayZoom...max(zoomCaps.minDisplayZoom, zoomCaps.maxDisplayZoom),
+        keyFactors: tempZoomContext == .referencePhoto
+          ? CameraReferenceContext.photoZoomKeyFactors
+          : zoomCaps.keyZoomFactors,
+        onChange: { newValue in
+          if tempZoomContext == .referencePhoto {
+            cameraContext.setBackdropZoom(newValue)
+          } else {
+            cameraContext.setZoom(newValue)
+          }
+        }
+      )
 
       // Reference-photo adjustment controls — shown once a tracing photo has
       // been captured/imported (idle mode with a backdrop). They let the user

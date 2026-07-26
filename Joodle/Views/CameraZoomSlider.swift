@@ -4,6 +4,107 @@
 //
 
 import SwiftUI
+import UIKit
+
+/// Pure geometry for the temporary edge-drag zoom reveal (JOO-147): maps how far
+/// the finger has dragged inward from a screen edge into a 0…1 "reveal" fraction,
+/// and decides whether a released drag has come out far enough to stay put.
+///
+/// Deliberately free of any view state so the interaction math can be unit-tested
+/// without driving the SwiftUI layer.
+enum EdgeDragReveal {
+  /// Fraction (0…1) the control has emerged from the edge for a given inward drag
+  /// distance. `inwardTranslation` is positive toward screen center; a negative
+  /// value (dragging back out past the edge) or a non-positive `pullDistance`
+  /// clamps to 0, and anything past `pullDistance` clamps to 1.
+  static func revealFraction(inwardTranslation: CGFloat, pullDistance: CGFloat) -> CGFloat {
+    guard pullDistance > 0 else { return 0 }
+    return min(max(inwardTranslation / pullDistance, 0), 1)
+  }
+
+  /// Whether a released drag has revealed the control far enough to commit (stay
+  /// out) rather than retract back into the edge.
+  static func shouldCommit(reveal: CGFloat, threshold: CGFloat = 0.5) -> Bool {
+    reveal >= threshold
+  }
+}
+
+/// Bridges a `UIScreenEdgePanGestureRecognizer` into SwiftUI so an inward drag
+/// starting at a specific screen edge is reliably recognized (JOO-147). A pure
+/// SwiftUI `DragGesture` on an edge strip loses the extreme-edge touch-down to
+/// the system's own screen-edge pan, so the ruler never emerges; the dedicated
+/// recognizer is the platform's own tool for exactly this and claims the touch.
+///
+/// `onChanged` reports the inward translation in points (clamped ≥ 0, positive
+/// toward screen center); `onEnded` fires once on release/cancel with the final
+/// inward translation.
+struct ScreenEdgePanCatcher: UIViewRepresentable {
+  let edge: HorizontalEdge
+  let onChanged: (CGFloat) -> Void
+  let onEnded: (CGFloat) -> Void
+
+  func makeCoordinator() -> Coordinator {
+    Coordinator(edge: edge, onChanged: onChanged, onEnded: onEnded)
+  }
+
+  func makeUIView(context: Context) -> UIView {
+    let view = UIView()
+    view.backgroundColor = .clear
+    let recognizer = UIScreenEdgePanGestureRecognizer(
+      target: context.coordinator,
+      action: #selector(Coordinator.handlePan(_:))
+    )
+    recognizer.edges = edge == .leading ? .left : .right
+    view.addGestureRecognizer(recognizer)
+    return view
+  }
+
+  func updateUIView(_ uiView: UIView, context: Context) {
+    // Keep the coordinator's captured closures/edge current across re-renders so
+    // the callbacks always mutate the latest SwiftUI state.
+    context.coordinator.edge = edge
+    context.coordinator.onChanged = onChanged
+    context.coordinator.onEnded = onEnded
+    for recognizer in uiView.gestureRecognizers ?? [] {
+      if let edgeRecognizer = recognizer as? UIScreenEdgePanGestureRecognizer {
+        edgeRecognizer.edges = edge == .leading ? .left : .right
+      }
+    }
+  }
+
+  final class Coordinator: NSObject {
+    var edge: HorizontalEdge
+    var onChanged: (CGFloat) -> Void
+    var onEnded: (CGFloat) -> Void
+
+    init(
+      edge: HorizontalEdge,
+      onChanged: @escaping (CGFloat) -> Void,
+      onEnded: @escaping (CGFloat) -> Void
+    ) {
+      self.edge = edge
+      self.onChanged = onChanged
+      self.onEnded = onEnded
+    }
+
+    @objc func handlePan(_ recognizer: UIScreenEdgePanGestureRecognizer) {
+      guard let view = recognizer.view else { return }
+      let translationX = recognizer.translation(in: view).x
+      // Inward is toward screen center: rightward for a left edge, leftward for
+      // a right edge. Clamp so dragging back past the edge never goes negative.
+      let inward = edge == .leading ? translationX : -translationX
+      let clamped = max(inward, 0)
+      switch recognizer.state {
+      case .began, .changed:
+        onChanged(clamped)
+      case .ended, .cancelled, .failed:
+        onEnded(clamped)
+      default:
+        break
+      }
+    }
+  }
+}
 
 /// A screen-edge camera zoom ruler, modelled on the native iOS Camera fine-zoom
 /// control. The value label stays pinned at the vertical center while the tick
