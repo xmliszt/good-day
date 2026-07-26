@@ -86,3 +86,46 @@ struct PhotoBackdropGeometryTests {
     #expect(range >= 0)
   }
 }
+
+/// The translation pad reads as the image itself: touching a point must bring
+/// THAT part of the photo into view. Since the photo is rendered with a
+/// screen-space `.offset`, revealing (say) the top-left corner means shifting
+/// the photo down-right — i.e. the offset is the negation of the touch vector.
+struct PhotoTranslationPadDirectionTests {
+
+  @Test func touchingTopLeftRevealsTopLeft() {
+    // Top-left of the pad is a negative touch offset; to bring the image's
+    // top-left into view the photo must slide down-right (positive offset).
+    let offset = PhotoTranslationPad.translationOffset(
+      touchDx: -100, touchDy: -100, padTravel: 100, range: 50)
+    #expect(offset.width > 0)
+    #expect(offset.height > 0)
+  }
+
+  @Test func touchingBottomRightRevealsBottomRight() {
+    let offset = PhotoTranslationPad.translationOffset(
+      touchDx: 100, touchDy: 100, padTravel: 100, range: 50)
+    #expect(offset.width < 0)
+    #expect(offset.height < 0)
+  }
+
+  @Test func fullDeflectionMatchesRangeMagnitude() {
+    let offset = PhotoTranslationPad.translationOffset(
+      touchDx: -100, touchDy: 100, padTravel: 100, range: 50)
+    #expect(abs(offset.width - 50) < 1e-9)   // left touch → +range (reveal left)
+    #expect(abs(offset.height + 50) < 1e-9)  // down touch → -range (reveal bottom)
+  }
+
+  @Test func centerTouchIsZero() {
+    let offset = PhotoTranslationPad.translationOffset(
+      touchDx: 0, touchDy: 0, padTravel: 100, range: 50)
+    #expect(abs(offset.width) < 1e-9)
+    #expect(abs(offset.height) < 1e-9)
+  }
+
+  @Test func zeroPadTravelIsSafe() {
+    let offset = PhotoTranslationPad.translationOffset(
+      touchDx: -100, touchDy: -100, padTravel: 0, range: 50)
+    #expect(offset == .zero)
+  }
+}

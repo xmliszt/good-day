@@ -90,6 +90,19 @@ struct PhotoTranslationPad: View {
   /// Maximum focal travel from center along either axis.
   private var padTravel: CGFloat { Self.padSide / 2 - 10 }
 
+  /// Maps a (center-snapped) touch offset from the pad center to the photo's
+  /// screen-space translation. The pad reads as the image itself, so the photo
+  /// shifts *opposite* the touch: touching the top-left (negative dx/dy) slides
+  /// the photo down-right (positive width/height) so the image's top-left comes
+  /// into view. `padTravel` is the full-deflection distance; `range` the
+  /// matching canvas-point travel at full deflection.
+  static func translationOffset(
+    touchDx dx: CGFloat, touchDy dy: CGFloat, padTravel: CGFloat, range: CGFloat
+  ) -> CGSize {
+    guard padTravel > 0 else { return .zero }
+    return CGSize(width: -dx / padTravel * range, height: -dy / padTravel * range)
+  }
+
   /// Eased glow strength at `date`: rises toward 1 while touching, falls back
   /// to 0 after release, restarting from wherever the last fade left off.
   private func glowStrength(at date: Date) -> CGFloat {
@@ -226,9 +239,12 @@ struct PhotoTranslationPad: View {
           lastAxisSign = (sx, sy)
         }
 
-        let newOffset = CGSize(
-          width: dx / padTravel * translationRange,
-          height: dy / padTravel * translationRange
+        // The pad reads as the image itself: touching a point brings THAT part
+        // of the photo into view (see `translationOffset` — the photo shifts
+        // opposite the touch). `.offset` renders in screen space (applied after
+        // the rotation), so a plain per-axis negation is all that's needed.
+        let newOffset = Self.translationOffset(
+          touchDx: dx, touchDy: dy, padTravel: padTravel, range: translationRange
         )
         if firstTouch {
           // The photo glides to the tapped position in step with the focal
