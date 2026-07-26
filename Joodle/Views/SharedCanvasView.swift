@@ -441,12 +441,17 @@ struct SharedCanvasView<TrailingHeader: View>: View {
               // Zoom / rotate / translate the reference so the user can position
               // it for tracing. scaleEffect + rotationEffect + offset are pure
               // geometry effects (no layout change), and the container's mask
-              // (applied below) clips whatever spills past the square.
+              // (applied below) clips whatever spills past the square. The
+              // rendered scale is the *effective* zoom — the user's zoom plus
+              // the auto-cover boost that keeps a rotated photo covering the
+              // canvas corners instead of revealing the white base.
               Image(uiImage: backdrop)
                 .resizable()
                 .scaledToFill()
                 .frame(width: CANVAS_SIZE, height: CANVAS_SIZE)
-                .scaleEffect(backdropZoom)
+                .scaleEffect(
+                  PhotoBackdropGeometry.effectiveZoom(zoom: backdropZoom, rotation: backdropRotation)
+                )
                 .rotationEffect(backdropRotation)
                 .offset(backdropOffset)
                 .opacity(0.3)

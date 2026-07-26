@@ -237,15 +237,6 @@ struct DrawingCanvasView: View {
     isCameraFeatureActive && cameraContext.mode == .live
   }
 
-  /// Whether the reference-photo adjustment affordances (the rotation ruler here,
-  /// plus the translation pad / zoom slider owned by ContentView) should show:
-  /// a reference has been captured/imported and we're not in the tutorial or a
-  /// live session. Mirrors the gating ContentView applies to its own overlays.
-  private var showPhotoAdjustControls: Bool {
-    isCameraFeatureActive && !isMockMode && isShowing
-      && cameraContext.backdropImage != nil && !isCameraLive
-  }
-
   private var cameraBackdropImage: UIImage? { isCameraFeatureActive ? cameraContext.backdropImage : nil }
   private var cameraSession: AVCaptureSession? { isCameraFeatureActive ? cameraContext.session : nil }
   private var cameraDevice: AVCaptureDevice? { isCameraFeatureActive ? cameraContext.currentDevice : nil }
@@ -294,9 +285,6 @@ struct DrawingCanvasView: View {
   private var canvasStack: some View {
     ZStack(alignment: .top) {
       VStack(spacing: 12) {
-        // Canvas + rotation ruler share a zero-spacing stack so the ruler sits
-        // flush against the canvas bottom, its corner curves continuing the rim.
-        VStack(spacing: 0) {
         SharedCanvasView(
           paths: $paths,
           pathMetadata: $pathMetadata,
@@ -352,20 +340,6 @@ struct DrawingCanvasView: View {
           }
         }
         .fixedSize(horizontal: false, vertical: true)
-
-        // Rotation ruler — a creased arc flush under the canvas, its curve
-        // concentric with the canvas corners. Scrubbing drives continuous
-        // (unclamped) photo rotation.
-        if showPhotoAdjustControls {
-          PhotoRotationRuler(
-            rotation: cameraContext.backdropRotation,
-            canvasCornerRadius: canvasCornerRadius,
-            width: CANVAS_SIZE,
-            onRotationChange: { cameraContext.backdropRotation = $0 }
-          )
-          .transition(.opacity)
-        }
-        }
 
         // Inspiration prompt text — centered, below the canvas (hidden in tutorial mode)
         if !isMockMode, let prompt = currentPrompt, !isCameraLive {

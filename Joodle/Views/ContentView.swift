@@ -503,16 +503,27 @@ struct ContentView: View {
       .allowsHitTesting(showPhotoAdjust)
       .animation(.easeOut(duration: 0.28), value: showPhotoAdjust)
 
-      // Native-Camera-style 2-axis translation pad, centered above the bottom
-      // edge (the same footprint the live shutter occupies). Rotation now lives
-      // in its own ruler flush under the canvas (see DrawingCanvasView).
+      // Native-Camera-style 2-axis translation pad wrapped by the rotation
+      // dial, centered above the bottom edge. The dial is a polaroid-style bezel
+      // that hugs the pad's perimeter and sits z-behind it, so only the ring
+      // around the pad is exposed for turning. Travel bound tracks zoom +
+      // rotation: zero at 1× (the photo exactly covers the canvas, so there's
+      // nothing to reveal), opening up to the photo's own edges as the user
+      // zooms in.
       VStack {
         Spacer()
-        PhotoTranslationPad(
-          offset: cameraContext.backdropOffset,
-          translationRange: CANVAS_SIZE * 0.6,
-          onOffsetChange: { cameraContext.backdropOffset = $0 }
-        )
+        ZStack {
+          PhotoRotationDial(
+            rotation: cameraContext.backdropRotation,
+            onRotationChange: { cameraContext.setBackdropRotation($0) },
+            innerSide: PhotoTranslationPad.containerSide
+          )
+          PhotoTranslationPad(
+            offset: cameraContext.backdropOffset,
+            translationRange: cameraContext.backdropTranslationRange,
+            onOffsetChange: { cameraContext.backdropOffset = $0 }
+          )
+        }
         .padding(.bottom, 24)
       }
       .ignoresSafeArea(.container, edges: .bottom)
