@@ -57,7 +57,7 @@ struct PhotoTranslationPad: View {
   /// Dead-band around each center line where the reported offset snaps to 0.
   private let centerSnap: CGFloat = 6
   /// Duration of the glow fade + focal glide on touch-down / release.
-  private let glowFadeDuration: TimeInterval = 0.3
+  private let glowFadeDuration: TimeInterval = 0.15
 
   /// True while a finger is down — the glow's target state.
   @State private var isTouching = false
@@ -157,24 +157,7 @@ struct PhotoTranslationPad: View {
   /// extra circle at the touch point.
   private func drawPad(_ context: GraphicsContext, size: CGSize, glow: CGFloat) {
     let focal = focalPoint(glow: glow)
-
-    // Soft radial glow halo around the focal point, fading to clear at its edge.
-    if glow > 0.01 {
-      let glowRect = CGRect(
-        x: focal.x - glowRadius, y: focal.y - glowRadius,
-        width: glowRadius * 2, height: glowRadius * 2
-      )
-      context.fill(
-        Circle().path(in: glowRect),
-        with: .radialGradient(
-          Gradient(colors: [Color.white.opacity(0.5 * glow), .clear]),
-          center: focal,
-          startRadius: 0,
-          endRadius: glowRadius
-        )
-      )
-    }
-
+    
     // Dot lattice — each dot magnifies and brightens toward the focal point,
     // scaled by the glow strength.
     let cols = max(1, Int(size.width / dotSpacing))
@@ -294,7 +277,7 @@ struct PhotoRotationDial: View {
   /// Side of the (square) translation-pad container this dial wraps.
   var innerSide: CGFloat
   /// Width of the exposed ring around the pad.
-  var bandWidth: CGFloat = 30
+  var bandWidth: CGFloat = 20
 
   /// Corner radius of the pad container — the band's inner contour matches it so
   /// the ring reads as concentric with the pad.
@@ -393,7 +376,7 @@ struct PhotoRotationDial: View {
         crease.addLine(to: p1)
         layer.stroke(
           crease,
-          with: .color(accent.opacity(0.6)),
+          with: .color(accent.opacity(0.4)),
           style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
       }
     }
