@@ -112,7 +112,7 @@ struct TrialClaimPaywallView: View {
         Button {
           claim()
         } label: {
-          Text("Claim my 7 free days")
+          Text("Claim my 7-day free trial")
             .font(.appHeadline())
             .foregroundColor(.appAccentContrast)
             .frame(maxWidth: .infinity)

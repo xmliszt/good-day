@@ -4041,42 +4041,42 @@
         }
       }
     },
-    "Claim my 7 free days" : {
+    "Claim my 7-day free trial" : {
       "localizations" : {
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Réclamer mes 7 jours gratuits"
+            "value" : "Réclamer mon essai gratuit de 7 jours"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "7日間無料で受け取る"
+            "value" : "7日間の無料トライアルを受け取る"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "7일 무료 혜택 받기"
+            "value" : "7일 무료 체험 받기"
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "7 günlük hediyemi al"
+            "value" : "7 günlük ücretsiz denememi al"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "领取我的 7 天免费"
+            "value" : "领取我的 7 天免费试用"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "領取我的 7 天免費"
+            "value" : "領取我的 7 天免費試用"
           }
         }
       }
