@@ -5,16 +5,16 @@
 //  Controls for positioning the captured tracing-reference photo:
 //
 //  • `PhotoTranslationPad` — a native-Camera-style 2-axis scrub pad. On touch a
-//    focal point glides from the pad's center out to the finger while a glow
-//    blooms in; grid dots magnify and brighten around it as the finger scrubs
-//    (translating the photo when it has room to move), and on release the focal
-//    point glides back to center while the glow fades out. The glow bleeds all
-//    the way to the container's continuous rounded corners.
+//    focal point glides from the pad's center out to the finger; grid dots
+//    magnify and brighten around it as the finger scrubs (translating the photo
+//    when it has room to move), and on release the focal point glides back to
+//    center as the lattice settles flat again.
 //
 //  • `PhotoRotationDial` — a rotary dial bezel that wraps the translation pad
 //    like the rotation ring on an old polaroid camera. It sits z-behind the pad;
-//    only the band around the (shrunk) pad is exposed. Accent-lit creases run
-//    around the band and scroll as the dial turns. Grab the ring and turn it —
+//    only the band around the (shrunk) pad is exposed. Short accent creases run
+//    around the band and scroll as the dial turns — dim at rest, and lighting up
+//    under an accent halo that follows the finger. Grab the ring and turn it —
 //    the finger's angle around the center drives the photo's rotation (finger
 //    clockwise → photo clockwise), unbounded across full turns; each crease
 //    crossing fires the shared haptic + click, and double-tapping levels to 0°.
@@ -24,6 +24,57 @@
 //
 
 import SwiftUI
+
+// MARK: - Touch glow
+
+/// Eased 0→1 touch strength shared by both controls: it rises while a finger is
+/// down, falls back to 0 after release, and always resumes from wherever the
+/// previous fade left off, so a release mid-bloom reverses without a jump.
+/// `animating` goes false once a fade has settled, letting the host pause its
+/// display-linked timeline until the next touch.
+private struct TouchGlow {
+  /// Rise / fall duration.
+  let fadeDuration: TimeInterval
+
+  private(set) var isOn = false
+  private(set) var animating = false
+  /// Bumped on every state change, so a settle scheduled by an earlier change
+  /// can't unmount a fade that has since superseded it.
+  private(set) var generation = 0
+  private var changedAt = Date.distantPast
+  private var strengthAtChange: CGFloat = 0
+
+  init(fadeDuration: TimeInterval = 0.15) {
+    self.fadeDuration = fadeDuration
+  }
+
+  /// Strength at `date` while fading, or the settled value once the fade has
+  /// finished — so a stale timeline date can never matter at rest.
+  func strength(at date: Date) -> CGFloat {
+    guard animating else { return isOn ? 1 : 0 }
+    let target: CGFloat = isOn ? 1 : 0
+    let progress = min(max(date.timeIntervalSince(changedAt) / fadeDuration, 0), 1)
+    let eased = CGFloat(progress * progress * (3 - 2 * progress))
+    return strengthAtChange + (target - strengthAtChange) * eased
+  }
+
+  /// Flips the target state and re-anchors the fade at the current strength.
+  /// Returns false when already in that state (nothing to do).
+  mutating func setOn(_ on: Bool, now: Date = Date()) -> Bool {
+    guard on != isOn else { return false }
+    strengthAtChange = strength(at: now)
+    changedAt = now
+    isOn = on
+    animating = true
+    generation += 1
+    return true
+  }
+
+  /// Ends the fade — call once `fadeDuration` has elapsed.
+  mutating func settle() {
+    animating = false
+  }
+}
 
 // MARK: - Translation pad
 
@@ -50,17 +101,14 @@ struct PhotoTranslationPad: View {
   private let baseDotRadius: CGFloat = 1.5
   /// Extra radius a dot gains right under the focal point at full glow.
   private let magnifyRadius: CGFloat = 4.5
-  /// Reach of the soft white glow halo around the focal point.
-  private let glowRadius: CGFloat = 52
   /// Gaussian falloff (points) of the per-dot magnify/brighten influence.
   private let influenceSigma: CGFloat = 34
   /// Dead-band around each center line where the reported offset snaps to 0.
   private let centerSnap: CGFloat = 6
-  /// Duration of the glow fade + focal glide on touch-down / release.
-  private let glowFadeDuration: TimeInterval = 0.15
 
-  /// True while a finger is down — the glow's target state.
-  @State private var isTouching = false
+  /// Glow (and focal-glide) strength — blooms in on touch-down, fades out on
+  /// release. Its duration also paces the photo's glide to the tapped position.
+  @State private var touchGlow = TouchGlow()
   /// Latest finger position, clamped to the pad's travel box. The focal point
   /// glides from center to here on touch-down, tracks it during the drag, and
   /// glides back to center from it after release.
@@ -69,16 +117,6 @@ struct PhotoTranslationPad: View {
   /// Axis sign (-1/0/1) so a light tick fires once as the offset snaps onto a
   /// center line rather than every frame.
   @State private var lastAxisSign = (x: 0, y: 0)
-  /// Timestamp of the last touch-down/up, anchoring the glow fade.
-  @State private var glowChangedAt = Date.distantPast
-  /// Glow strength captured at the last touch state change, so a release
-  /// mid-fade reverses from the current strength without a jump.
-  @State private var glowAtChange: CGFloat = 0
-  /// Mounts the display-linked timeline only while the glow is actually
-  /// fading; the pad renders on a paused schedule once settled.
-  @State private var glowAnimating = false
-  /// Invalidates a pending settle when a newer touch change supersedes it.
-  @State private var glowSettleGeneration = 0
   /// End time of the last tap-like touch (barely any movement), so a second
   /// one in quick succession recenters. Detected manually in the drag's
   /// `onEnded` — a simultaneous `TapGesture(count: 2)` races the
@@ -103,15 +141,6 @@ struct PhotoTranslationPad: View {
     return CGSize(width: -dx / padTravel * range, height: -dy / padTravel * range)
   }
 
-  /// Eased glow strength at `date`: rises toward 1 while touching, falls back
-  /// to 0 after release, restarting from wherever the last fade left off.
-  private func glowStrength(at date: Date) -> CGFloat {
-    let target: CGFloat = isTouching ? 1 : 0
-    let progress = min(max(date.timeIntervalSince(glowChangedAt) / glowFadeDuration, 0), 1)
-    let eased = CGFloat(progress * progress * (3 - 2 * progress))
-    return glowAtChange + (target - glowAtChange) * eased
-  }
-
   /// Focal point at the given glow strength: the glow doubles as the glide
   /// parameter, so the focal point leaves center exactly as the glow blooms in
   /// and returns to center exactly as it fades out.
@@ -130,10 +159,9 @@ struct PhotoTranslationPad: View {
     // release would never arrive and the glow would stick on). While paused,
     // the settled strength is used directly so the (stale) timeline date
     // never matters.
-    TimelineView(.animation(minimumInterval: nil, paused: !glowAnimating)) { timeline in
+    TimelineView(.animation(minimumInterval: nil, paused: !touchGlow.animating)) { timeline in
       Canvas(opaque: false) { context, size in
-        let glow = glowAnimating ? glowStrength(at: timeline.date) : (isTouching ? 1 : 0)
-        drawPad(context, size: size, glow: glow)
+        drawPad(context, size: size, glow: touchGlow.strength(at: timeline.date))
       }
     }
     .frame(width: containerSide, height: containerSide)
@@ -181,18 +209,12 @@ struct PhotoTranslationPad: View {
   /// the current strength, then schedules the timeline to unmount once the
   /// fade completes.
   private func setTouching(_ touching: Bool) {
-    guard touching != isTouching else { return }
-    let now = Date()
-    glowAtChange = glowStrength(at: now)
-    glowChangedAt = now
-    isTouching = touching
-    glowAnimating = true
-    glowSettleGeneration += 1
-    let generation = glowSettleGeneration
+    guard touchGlow.setOn(touching) else { return }
+    let generation = touchGlow.generation
     Task { @MainActor in
-      try? await Task.sleep(nanoseconds: UInt64((glowFadeDuration + 0.05) * 1_000_000_000))
-      guard generation == glowSettleGeneration else { return }
-      glowAnimating = false
+      try? await Task.sleep(nanoseconds: UInt64((touchGlow.fadeDuration + 0.05) * 1_000_000_000))
+      guard generation == touchGlow.generation else { return }
+      touchGlow.settle()
     }
   }
 
@@ -204,7 +226,7 @@ struct PhotoTranslationPad: View {
         let clampedDy = min(max(value.location.y - center, -padTravel), padTravel)
         touchPoint = CGPoint(x: center + clampedDx, y: center + clampedDy)
 
-        let firstTouch = !isTouching
+        let firstTouch = !touchGlow.isOn
         if firstTouch {
           setTouching(true)
           Haptic.play(with: .medium)
@@ -232,7 +254,7 @@ struct PhotoTranslationPad: View {
         if firstTouch {
           // The photo glides to the tapped position in step with the focal
           // point's center → touch glide, instead of jumping there.
-          withAnimation(.easeOut(duration: glowFadeDuration)) {
+          withAnimation(.easeOut(duration: touchGlow.fadeDuration)) {
             onOffsetChange(newOffset)
           }
         } else {
@@ -248,7 +270,7 @@ struct PhotoTranslationPad: View {
           lastTapEndedAt = nil
           Haptic.play(with: .light)
           lastAxisSign = (0, 0)
-          withAnimation(.easeOut(duration: glowFadeDuration)) {
+          withAnimation(.easeOut(duration: touchGlow.fadeDuration)) {
             onOffsetChange(.zero)
           }
         } else {
@@ -263,8 +285,9 @@ struct PhotoTranslationPad: View {
 /// A rotary dial bezel that wraps the translation pad like the rotation ring on
 /// an old polaroid camera. It renders a black plate sized to sit *behind* the
 /// pad (`innerSide`) with a `bandWidth`-wide ring exposed all the way around;
-/// uniform accent creases follow the rounded-rect band and scroll as the dial
-/// turns, and an accent-filled indicator dot painted at the band's top center
+/// short accent creases follow the rounded-rect band and scroll as the dial
+/// turns — dim at rest, lengthening and brightening toward the finger under a
+/// radial accent halo — and an accent-filled indicator dot painted at the top center
 /// rides the rotating surface — it travels along the band (right as the photo
 /// turns clockwise) to show how far the dial has turned. Turning is angular: the
 /// finger's angle around the center drives the rotation (finger clockwise →
@@ -284,7 +307,22 @@ struct PhotoRotationDial: View {
   private let innerCornerRadius: CGFloat = 30
   /// Target spacing between creases along the band's mid contour (points).
   private let creaseSpacing: CGFloat = 13
+  /// Half-length of a crease across the band, as a fraction of the band width —
+  /// short marks that read as a calm ruler rather than a full-width grille.
+  private let creaseReachFraction: CGFloat = 0.12
+  /// Radius of the indicator dot as a fraction of the band width.
+  private let indicatorRadiusFraction: CGFloat = 0.19
+  /// Reach of the soft accent halo that blooms under the finger while turning.
+  private let glowRadius: CGFloat = 46
+  /// Gaussian falloff (points) of the per-crease brighten/lengthen influence.
+  private let influenceSigma: CGFloat = 34
 
+  /// Glow strength under the finger — blooms in while the dial is being turned
+  /// and fades out on release, matching the translation pad's transition.
+  @State private var touchGlow = TouchGlow()
+  /// Latest finger position in the dial's own space, clamped to its bounds, so
+  /// the halo stays on the band when a turn drags past the dial's edge.
+  @State private var touchPoint: CGPoint = .zero
   /// Finger angle (radians, atan2 in the view's y-down space) at the previous
   /// drag frame, so per-frame angular deltas accumulate into unbounded rotation.
   @State private var lastAngle: CGFloat?
@@ -317,8 +355,13 @@ struct PhotoRotationDial: View {
   }
 
   var body: some View {
-    Canvas(opaque: false) { context, size in
-      drawDial(context, size: size)
+    // One stable TimelineView whose schedule pauses at rest — same rationale as
+    // the translation pad: swapping the hierarchy on touch-down would cancel the
+    // in-flight turn gesture and the glow would stick on.
+    TimelineView(.animation(minimumInterval: nil, paused: !touchGlow.animating)) { timeline in
+      Canvas(opaque: false) { context, size in
+        drawDial(context, size: size, glow: touchGlow.strength(at: timeline.date))
+      }
     }
     .frame(width: outerSide, height: outerSide)
     .background(
@@ -334,7 +377,7 @@ struct PhotoRotationDial: View {
     .gesture(dialDrag)
   }
 
-  private func drawDial(_ context: GraphicsContext, size: CGSize) {
+  private func drawDial(_ context: GraphicsContext, size: CGSize, glow: CGFloat) {
     let center = CGPoint(x: size.width / 2, y: size.height / 2)
     let midSide = innerSide + bandWidth
     let midRadius = innerCornerRadius + bandWidth / 2
@@ -355,16 +398,41 @@ struct PhotoRotationDial: View {
       lineWidth: 1
     )
 
+    // Soft accent halo under the finger, fading to clear at its edge. Drawn
+    // beneath the marks so they read as lit *by* it, and trimmed by the dial's
+    // own clip so the light spills along the band's rounded corners.
+    if glow > 0.01 {
+      let glowRect = CGRect(
+        x: touchPoint.x - glowRadius, y: touchPoint.y - glowRadius,
+        width: glowRadius * 2, height: glowRadius * 2
+      )
+      context.fill(
+        Circle().path(in: glowRect),
+        with: .radialGradient(
+          Gradient(colors: [accent.opacity(0.45 * glow), .clear]),
+          center: touchPoint,
+          startRadius: 0,
+          endRadius: glowRadius
+        )
+      )
+    }
+
     // Creases: uniform short ticks sampled at even arc-length steps around the
     // band's mid contour, scrolling by the current rotation so the dial visibly
     // turns. Each is a segment across the band along the local outward normal.
+    // They sit dim at rest and — like the pad's dot lattice — lengthen and
+    // brighten toward the finger, so the ruler lights up only where it's grabbed.
     let scroll = CGFloat(rotation.degrees / 360) * perimeter
+    let baseReach = bandWidth * creaseReachFraction
     context.drawLayer { layer in
-      layer.addFilter(.shadow(color: accent.opacity(0.9), radius: 3))
-      let reach = bandWidth * 0.24
+      if glow > 0.01 {
+        layer.addFilter(.shadow(color: accent.opacity(0.9 * glow), radius: 3))
+      }
       for k in 0..<count {
         let d = CGFloat(k) / CGFloat(count) * perimeter + scroll
         let sample = outline.sample(at: d)
+        let lit = influence(at: sample.point, glow: glow)
+        let reach = baseReach * (1 + 0.7 * lit)
         let p0 = CGPoint(
           x: sample.point.x - sample.normal.dx * reach,
           y: sample.point.y - sample.normal.dy * reach)
@@ -376,7 +444,7 @@ struct PhotoRotationDial: View {
         crease.addLine(to: p1)
         layer.stroke(
           crease,
-          with: .color(accent.opacity(0.4)),
+          with: .color(accent.opacity(0.22 + 0.78 * lit)),
           style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
       }
     }
@@ -388,13 +456,37 @@ struct PhotoRotationDial: View {
     // from the outline's start (the top edge's left end).
     let topCenterDistance = midSide / 2 - midRadius
     let indicator = outline.sample(at: topCenterDistance + scroll)
-    let dotRadius = bandWidth * 0.3
+    let dotRadius = bandWidth * indicatorRadiusFraction
     let dotRect = CGRect(
       x: indicator.point.x - dotRadius, y: indicator.point.y - dotRadius,
       width: dotRadius * 2, height: dotRadius * 2)
     context.drawLayer { layer in
-      layer.addFilter(.shadow(color: accent.opacity(0.9), radius: 5))
+      // Its bloom swells as the finger passes over it, on top of the resting
+      // glow that keeps the origin readable when the dial is idle.
+      let bloom = 0.5 + 0.5 * influence(at: indicator.point, glow: glow)
+      layer.addFilter(.shadow(color: accent.opacity(0.9 * bloom), radius: 4 + 4 * bloom))
       layer.fill(Circle().path(in: dotRect), with: .color(accent))
+    }
+  }
+
+  /// Gaussian falloff of the finger's influence at a point on the band, scaled
+  /// by the glow strength — the same brighten/magnify curve the pad's dot
+  /// lattice uses, so both controls light up the same way under a finger.
+  private func influence(at point: CGPoint, glow: CGFloat) -> CGFloat {
+    guard glow > 0.01 else { return 0 }
+    let d = hypot(point.x - touchPoint.x, point.y - touchPoint.y)
+    return exp(-pow(d / influenceSigma, 2)) * glow
+  }
+
+  /// Flips the glow's target state and schedules the timeline to pause again
+  /// once the fade completes.
+  private func setTouching(_ touching: Bool) {
+    guard touchGlow.setOn(touching) else { return }
+    let generation = touchGlow.generation
+    Task { @MainActor in
+      try? await Task.sleep(nanoseconds: UInt64((touchGlow.fadeDuration + 0.05) * 1_000_000_000))
+      guard generation == touchGlow.generation else { return }
+      touchGlow.settle()
     }
   }
 
@@ -403,10 +495,15 @@ struct PhotoRotationDial: View {
       .onChanged { value in
         let center = outerSide / 2
         let angle = atan2(value.location.y - center, value.location.x - center)
+        touchPoint = CGPoint(
+          x: min(max(value.location.x, 0), outerSide),
+          y: min(max(value.location.y, 0), outerSide)
+        )
         if lastAngle == nil {
           lastAngle = angle
           anchorDegrees = rotation.degrees
           sweptDegrees = 0
+          setTouching(true)
         } else if let last = lastAngle {
           var delta = angle - last
           // Shortest-arc wrap so crossing the ±π seam doesn't jump a full turn.
@@ -430,6 +527,7 @@ struct PhotoRotationDial: View {
       }
       .onEnded { value in
         lastAngle = nil
+        setTouching(false)
         // Manual double-tap detection: two barely-moved touches in quick
         // succession level the photo back to 0°.
         let isTap = hypot(value.translation.width, value.translation.height) < 10

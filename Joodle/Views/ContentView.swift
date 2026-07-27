@@ -469,11 +469,17 @@ struct ContentView: View {
           },
           // Hide floating canvas view when navigating to settings
           hidden: hideDynamicIslandView,
-          // Tapping outside requests a save + dismiss; the canvas shows its
-          // saving state, persists, then drives the collapse via onDismiss.
+          // Save + dismiss, driven only by the canvas's own checkmark button.
           onDismiss: {
             requestCanvasSaveAndDismiss()
-          }
+          },
+          // A backdrop tap must never close the canvas: the surrounding area is
+          // easy to catch while drawing — and doubly so while reaching for the
+          // photo adjust controls that sit outside the container — and losing an
+          // in-progress doodle to a stray touch is unrecoverable. The tap is
+          // still absorbed by the container so it can't fall through to the
+          // grid behind.
+          dismissOnTapOutside: false
         )
         .id("DynamicIslandExpandedView-\(dataProvider.selectedDateItem?.id ?? "none")")
       }
@@ -684,6 +690,9 @@ struct ContentView: View {
             onOffsetChange: { cameraContext.backdropOffset = $0 }
           )
         }
+        // Lifts the panel off whatever it floats over — its black plate would
+        // otherwise merge into the dark backdrop behind the canvas.
+        .shadow(color: .black.opacity(0.35), radius: 20, y: 10)
         .padding(.bottom, 24)
       }
       .ignoresSafeArea(.container, edges: .bottom)

@@ -69,7 +69,7 @@ final class CameraReferenceController: NSObject, ObservableObject, @unchecked Se
   /// the most-recent frame here instead of running a full photo capture — a
   /// 12-MP `AVCapturePhotoOutput` shot (sensor read → JPEG encode → re-decode)
   /// added ~hundreds of ms of shutter latency just to produce a downsampled,
-  /// 30%-opacity tracing reference. The saved polaroid is only ~1024px, so a
+  /// 30%-opacity tracing reference. The album copy is only ~1024px, so a
   /// preview-resolution frame is more than enough for both uses.
   private let videoDataOutput = AVCaptureVideoDataOutput()
   private let frameQueue = DispatchQueue(label: "dev.liyuxuan.joodle.camera.frames")
@@ -226,7 +226,7 @@ final class CameraReferenceController: NSObject, ObservableObject, @unchecked Se
   /// Renders the most-recent live frame *once* into an upright, square,
   /// downsampled image — off the main thread — and returns it both as a
   /// ready-to-display `UIImage` (the tracing backdrop) and the underlying
-  /// `CGImage` (handed to `savePolaroid` for the optional album save, so a
+  /// `CGImage` (handed to `saveCapturedPhoto` for the optional album save, so a
   /// frame is run through Core Image only once). The frame buffer is grabbed
   /// synchronously (a cheap retain), but the orient/crop/downsample
   /// `createCGImage` — a GPU upload + readback that stalled the main thread for
@@ -258,7 +258,7 @@ final class CameraReferenceController: NSObject, ObservableObject, @unchecked Se
     }
   }
 
-  /// Grades, polaroid-frames, JPEG-encodes, and saves an already-rendered square
+  /// Grades, JPEG-encodes, and saves an already-rendered square
   /// `CGImage` (the `square` from `latestSquareFrame`) to the album — all on a
   /// background queue, so a frame is never run through Core Image a second time.
   /// A nil `square` (no frame was ready) still requests add-only access so the
@@ -268,10 +268,10 @@ final class CameraReferenceController: NSObject, ObservableObject, @unchecked Se
   /// `onPermissionDenied` fires (on an arbitrary queue) when Photos add-only
   /// access is denied/restricted — the save is silently impossible, so callers
   /// surface guidance for re-enabling it rather than failing quietly.
-  func savePolaroid(from square: CGImage?, onPermissionDenied: (@Sendable () -> Void)? = nil) {
+  func saveCapturedPhoto(from square: CGImage?, onPermissionDenied: (@Sendable () -> Void)? = nil) {
     DispatchQueue.global(qos: .utility).async {
-      let data = square.flatMap(Self.makePolaroid)
-      Self.savePolaroidToPhotosAlbum(data: data, onPermissionDenied: onPermissionDenied)
+      let data = square.flatMap(Self.makeCapturedPhotoData)
+      Self.saveToPhotosAlbum(data: data, onPermissionDenied: onPermissionDenied)
     }
   }
 
@@ -556,11 +556,11 @@ extension CameraReferenceController: AVCaptureVideoDataOutputSampleBufferDelegat
   }
 
   /// Resolves Photos add-only access — surfacing the one-time system prompt when
-  /// the status is undetermined — then persists a polaroid-framed, colour-graded
-  /// image to the user's album. The authorization request is intentionally NOT
+  /// the status is undetermined — then persists the colour-graded image to the
+  /// user's album. The authorization request is intentionally NOT
   /// gated on `data`: a missing frame must still trigger the prompt so the user
   /// can grant access, rather than the save silently no-op'ing.
-  private static func savePolaroidToPhotosAlbum(data: Data?, onPermissionDenied: (@Sendable () -> Void)? = nil) {
+  private static func saveToPhotosAlbum(data: Data?, onPermissionDenied: (@Sendable () -> Void)? = nil) {
     PHPhotoLibrary.requestAuthorization(for: .addOnly) { status in
       guard status == .authorized || status == .limited else {
         onPermissionDenied?()
@@ -580,25 +580,25 @@ extension CameraReferenceController: AVCaptureVideoDataOutputSampleBufferDelegat
     }
   }
 
-  /// Applies the Fujifilm grade to an already-square `CGImage`, then composites
-  /// it onto a white canvas with uniform padding — a polaroid-style framed
-  /// JPEG. Falls back to the un-graded image if the grade fails.
-  private static func makePolaroid(from squareImage: CGImage) -> Data? {
+  /// Applies the Fujifilm grade to an already-square `CGImage` and JPEG-encodes
+  /// it edge to edge. Deliberately unframed: the saved photo is the same square
+  /// the tracing backdrop was cut from, so re-importing it from the album fills
+  /// the canvas exactly as captured. A white polaroid border here would come
+  /// back as a shrunken photo ringed in white, since the import path treats the
+  /// whole image as the frame. Falls back to the un-graded image if the grade
+  /// fails.
+  private static func makeCapturedPhotoData(from squareImage: CGImage) -> Data? {
     let graded = FujifilmFilter.apply(to: squareImage, grade: .classicNegative) ?? squareImage
     let side = CGFloat(min(graded.width, graded.height))
     guard side > 0 else { return nil }
     let photo = UIImage(cgImage: graded, scale: 1, orientation: .up)
 
-    let paddingFraction: CGFloat = 0.08
-    let paddingPx = floor(side * paddingFraction)
-    let canvasSize = CGSize(width: side + paddingPx * 2, height: side + paddingPx * 2)
+    let canvasSize = CGSize(width: side, height: side)
     let format = UIGraphicsImageRendererFormat()
     format.scale = 1
     let renderer = UIGraphicsImageRenderer(size: canvasSize, format: format)
-    return renderer.jpegData(withCompressionQuality: 0.9) { context in
-      UIColor.white.setFill()
-      context.fill(CGRect(origin: .zero, size: canvasSize))
-      photo.draw(in: CGRect(x: paddingPx, y: paddingPx, width: side, height: side))
+    return renderer.jpegData(withCompressionQuality: 0.9) { _ in
+      photo.draw(in: CGRect(origin: .zero, size: canvasSize))
     }
   }
 }

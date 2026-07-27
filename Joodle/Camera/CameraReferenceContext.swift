@@ -363,9 +363,9 @@ final class CameraReferenceContext: ObservableObject {
     withAnimation(.easeInOut(duration: 0.2)) { self.mode = .idle }
     #else
     // Render the latest live frame ONCE — off the main thread — into a square
-    // image used for both the tracing backdrop and (optionally) the saved
-    // polaroid, so a full-resolution back-camera frame is never run through
-    // Core Image twice. When save-to-album is on we render at the polaroid's
+    // image used for both the tracing backdrop and (optionally) the album copy,
+    // so a full-resolution back-camera frame is never run through
+    // Core Image twice. When save-to-album is on we render at the album copy's
     // 2048px (the backdrop happily uses the same image); otherwise the 1024px
     // the backdrop needs on its own is enough. The frame buffer is grabbed
     // synchronously inside latestSquareFrame() (so it survives the stop()
@@ -381,7 +381,7 @@ final class CameraReferenceContext: ObservableObject {
       self.backdropImage = rendered.backdrop
     }
     isCapturing = false
-    // Saving a filtered polaroid is a pure background job that must never gate
+    // Saving the filtered copy is a pure background job that must never gate
     // the backdrop appearing — it reuses the square already rendered above. The
     // toggle is the single source of truth: ON means "ensure access" — so the
     // save path requests add-only permission, prompting the first time (even
@@ -390,7 +390,7 @@ final class CameraReferenceContext: ObservableObject {
     // record the user's deliberate choice (no future prompts) and surface a
     // one-shot message.
     if shouldSave {
-      controller.savePolaroid(from: rendered?.square) { [weak self] in
+      controller.saveCapturedPhoto(from: rendered?.square) { [weak self] in
         Task { @MainActor in
           guard let self else { return }
           UserPreferences.shared.saveCapturedPhotoToAlbum = false
