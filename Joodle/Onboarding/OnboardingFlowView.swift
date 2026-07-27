@@ -71,6 +71,10 @@ struct ProPaywallStepView: View {
                 viewModel.completeStep(.proPaywall)
             }
         ))
+        // The content forces its own dark scheme; this carries it out to the
+        // window chrome so the status bar isn't left drawing dark glyphs on the
+        // black background this step now has.
+        .forcedWindowColorScheme(.dark)
         .postHogScreenView("Onboarding Paywall")
         .onAppear {
             AnalyticsManager.shared.trackPaywallViewed(source: "onboarding_paywall")

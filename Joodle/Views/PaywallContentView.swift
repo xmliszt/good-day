@@ -394,6 +394,16 @@ struct PaywallContentView: View {
         }
       }
     }
+    // The paywall commits to a dark, premium look on every surface it appears
+    // on. The live feature demos are drawn against dark — white-alpha grids,
+    // glowing accent strokes, the liquid backdrop — and wash out to nothing on
+    // white, so the content owns its scheme rather than inheriting the host's.
+    // Written into the environment, not as `preferredColorScheme`: that is a
+    // preference, and the app root already sets one for the whole window, which
+    // takes precedence over anything a pushed screen asks for.
+    .background(Color(uiColor: .systemBackground).ignoresSafeArea())
+    .environment(\.colorScheme, .dark)
+    .toolbarColorScheme(.dark, for: .navigationBar)
   }
 
   // MARK: - Header Section

@@ -199,6 +199,7 @@ struct JoodleApp: App {
   @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
   @State private var colorScheme: ColorScheme? = UserPreferences.shared.preferredColorScheme
   @State private var accentColor: ThemeColor = UserPreferences.shared.accentColor
+  @StateObject private var chrome = AppChrome.shared
   @State private var selectedDateFromWidget: Date?
   @State private var showPaywallFromWidget = false
   @State private var showLimitedTimeOffer = false
@@ -640,7 +641,9 @@ struct JoodleApp: App {
             }
         }
       }
-      .preferredColorScheme(colorScheme)
+      // A screen that commits to one scheme (the paywall) takes the window with
+      // it, so the status bar and other system chrome match what it renders.
+      .preferredColorScheme(chrome.forcedColorScheme ?? colorScheme)
       .tint(accentColor.color)
       .environment(\.locale, appLocale)
       // One-time per build: force save-to-album ON for everyone. The Photos
