@@ -41,6 +41,17 @@ final class ChangelogManager: ObservableObject {
 
     // MARK: - Public Methods
 
+    /// Whether this launch owes the user a changelog at all.
+    ///
+    /// Only reads flags — no network — so a presenter can reserve its place
+    /// before spending a fetch on *which* notes to show. Whether content is
+    /// actually available is a separate question, answered by
+    /// `checkAndPrepareChangelog()`.
+    var isChangelogDue: Bool {
+        guard defaults.bool(forKey: "hasCompletedOnboarding") else { return false }
+        return !hasSeenChangelog(for: AppEnvironment.fullVersionString)
+    }
+
     /// Check and prepare changelog for display if needed
     /// Call this on app launch after onboarding is complete
     func checkAndPrepareChangelog() async {

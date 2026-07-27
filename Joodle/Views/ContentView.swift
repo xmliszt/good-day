@@ -716,6 +716,7 @@ struct ContentView: View {
       Text("Your Joodle Pro subscription has ended. Some features are now limited.")
     }
     .sheet(isPresented: $showPostTrialSheet, onDismiss: {
+      LaunchModalCoordinator.shared.release(.postTrial)
       // Ask for the App Store review right after the trial-ended sheet goes
       // away — the user just lived a week with full Pro, so perceived value
       // peaks here. Never for the never-claimed path, and never stacked on
@@ -729,7 +730,9 @@ struct ContentView: View {
         context: .trialEnded(offerExpired: postTrialOfferExpired)
       )
     }
-    .sheet(isPresented: $showTrialClaimSheet) {
+    .sheet(isPresented: $showTrialClaimSheet, onDismiss: {
+      LaunchModalCoordinator.shared.release(.trialClaim)
+    }) {
       TrialClaimPaywallView(source: "doodle_limit")
     }
     .alert(String(localized: "Move Doodle"), isPresented: $showMoveConfirmation) {
@@ -754,6 +757,11 @@ struct ContentView: View {
       Task {
         await subscriptionManager.updateSubscriptionStatus()
 
+        // The changelog gets the launch if it has notes to show. Standing down
+        // costs nothing here: neither sheet below marks itself shown unless it
+        // actually presents, so both are still due on the next open.
+        await LaunchModalCoordinator.shared.awaitChangelogDecision()
+
         // Post-trial sheet: one-time, on the next open after the trial ended
         // or the claim window lapsed. Must run AFTER the subscription refresh
         // so active subscribers never see it.
@@ -762,6 +770,7 @@ struct ContentView: View {
           // Arm the 50%-off window first so the sheet renders with the live
           // promo price and countdown.
           await LimitedTimeOfferManager.shared.refresh()
+          guard LaunchModalCoordinator.shared.take(.postTrial) else { return }
           showPostTrialSheet = true
           trialOfferManager.markPostTrialSheetShown()
           AnalyticsManager.shared.track(
@@ -867,10 +876,12 @@ struct ContentView: View {
   private func maybeAutoPresentClaimOffer() {
     guard !showPostTrialSheet, !showTrialClaimSheet, !showDrawingCanvas else { return }
     let doodleCount = entries.filter { $0.drawingData?.isEmpty == false }.count
-    if trialOfferManager.shouldAutoPresentClaimOffer(doodleCount: doodleCount) {
-      trialOfferManager.markClaimOfferAutoPresented()
-      showTrialClaimSheet = true
-    }
+    guard trialOfferManager.shouldAutoPresentClaimOffer(doodleCount: doodleCount) else { return }
+    // Take the slot before marking the offer presented — otherwise a launch
+    // that yields to the changelog burns the one auto-present the offer gets.
+    guard LaunchModalCoordinator.shared.take(.trialClaim) else { return }
+    trialOfferManager.markClaimOfferAutoPresented()
+    showTrialClaimSheet = true
   }
 
   // MARK: - Grid Interaction Callbacks

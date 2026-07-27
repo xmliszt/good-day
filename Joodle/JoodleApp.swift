@@ -572,12 +572,15 @@ struct JoodleApp: App {
                 NavigationHelper.dismissAllPresentedViews()
                 Haptic.play()
               }
-              .sheet(isPresented: $showPaywallFromWidget) {
+              .sheet(isPresented: $showPaywallFromWidget, onDismiss: {
+                LaunchModalCoordinator.shared.release(.widgetPaywall)
+              }) {
                 StandalonePaywallView(source: "widget")
                   .presentationDetents([.large])
               }
               .sheet(isPresented: $showLimitedTimeOffer, onDismiss: {
                 LimitedTimeOfferManager.shared.markCurrentCampaignSeen()
+                LaunchModalCoordinator.shared.release(.limitedTimeOffer)
               }) {
                 StandalonePaywallView(source: "lto_auto", context: .limitedTimeOffer)
                   .presentationDetents([.large])
@@ -585,21 +588,23 @@ struct JoodleApp: App {
               .task {
                 // Auto-present the limited-time offer once per campaign, only after
                 // the main content is mounted (this branch already runs post-launch-
-                // screen, honoring the cold-launch render-abort constraint). Defer to
-                // any changelog so we never stack two sheets on the same launch.
+                // screen, honoring the cold-launch render-abort constraint).
                 await LimitedTimeOfferManager.shared.refresh()
-                guard hasCompletedOnboarding, changelogEntry == nil else { return }
+                guard hasCompletedOnboarding else { return }
+                // Wait for the changelog's decision rather than sampling it: it
+                // is still fetching at this point, so an early read says "no
+                // changelog" for a launch that is about to have one.
+                await LaunchModalCoordinator.shared.awaitChangelogDecision()
                 // A pending post-trial sheet or claim-offer auto-present owns
                 // the launch (ContentView presents those and consumes our
                 // auto-present); racing them here would stack two sheets from
                 // different presenters.
                 guard !TrialOfferManager.shared.shouldPresentPostTrialSheet else { return }
-                if LimitedTimeOfferManager.shared.shouldAutoPresent {
-                  try? await Task.sleep(for: .milliseconds(400))
-                  if changelogEntry == nil && !showPaywallFromWidget {
-                    showLimitedTimeOffer = true
-                  }
-                }
+                guard LimitedTimeOfferManager.shared.shouldAutoPresent else { return }
+                try? await Task.sleep(for: .milliseconds(400))
+                guard !showPaywallFromWidget,
+                      LaunchModalCoordinator.shared.take(.limitedTimeOffer) else { return }
+                showLimitedTimeOffer = true
               }
               .alert("Enable iCloud Sync", isPresented: $showPendingRestartAlert) {
                 Button("Later", role: .cancel) {
@@ -668,6 +673,7 @@ struct JoodleApp: App {
         // Mark as seen when changelog is dismissed (newValue is nil, oldValue was shown)
         if newValue == nil && oldValue != nil {
           ChangelogManager.shared.markCurrentVersionAsSeen()
+          LaunchModalCoordinator.shared.release(.changelog)
         }
       }
     }
@@ -717,8 +723,13 @@ struct JoodleApp: App {
   /// Checks for changelog first, then remote alerts if no changelog is shown.
   /// Remote alerts are skipped during onboarding or when changelog is displayed.
   private func checkForChangelogThenRemoteAlerts() {
+    let coordinator = LaunchModalCoordinator.shared
+
     // Skip everything during onboarding - user should complete onboarding first
-    guard hasCompletedOnboarding else { return }
+    guard hasCompletedOnboarding else {
+      coordinator.settleChangelog()
+      return
+    }
 
     // Small delay to ensure app is fully ready, then fetch async
     // Fetch remote prompts independently — fire-and-forget, no UI dependency
@@ -727,13 +738,34 @@ struct JoodleApp: App {
     }
 
     Task { @MainActor in
+      // Reserve the launch before fetching, not after. Whether notes are owed
+      // is a flag read; only their content needs the network. A paywall that
+      // finishes its own async work mid-fetch then finds the slot taken and
+      // stands down, instead of presenting into the gap and leaving the notes
+      // with nowhere to go.
+      let reserved = ChangelogManager.shared.isChangelogDue
+        && !showPaywallFromWidget
+        && coordinator.take(.changelog)
+
       try? await Task.sleep(for: .milliseconds(300))
       await ChangelogManager.shared.checkAndPrepareChangelog()
-      if let entry = ChangelogManager.shared.changelogToShow {
+
+      // Re-check ownership rather than trusting the reservation: a widget tap
+      // during the fetch displaces us, and presenting on top of it is the exact
+      // collision this is here to prevent.
+      if reserved, coordinator.owner == .changelog,
+         let entry = ChangelogManager.shared.changelogToShow {
         // Show changelog - skip remote alerts for this launch
         // (user will see remote alert on next launch if conditions are met)
         changelogEntry = entry
+        coordinator.settleChangelog()
       } else {
+        // Nothing to show, or something else already owned the launch. Give the
+        // slot back before releasing the paywalls that are waiting on us — they
+        // check it the moment they wake up. The notes stay unseen either way,
+        // so they come back on the next open.
+        coordinator.release(.changelog)
+        coordinator.settleChangelog()
         // No changelog to show - safe to check for remote alerts
         await remoteAlertService.checkForAlert()
       }
@@ -754,6 +786,9 @@ struct JoodleApp: App {
 
         // If not subscribed, show the paywall
         if !SubscriptionManager.shared.hasPremiumAccess {
+          // The user tapped a widget to get here, so this outranks anything the
+          // launch was about to auto-present.
+          LaunchModalCoordinator.shared.takeOverriding(.widgetPaywall)
           showPaywallFromWidget = true
         }
       }

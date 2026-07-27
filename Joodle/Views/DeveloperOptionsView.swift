@@ -222,6 +222,9 @@ struct DeveloperOptionsView: View {
     // Clear the 50%-off offer state alongside, so post-trial scenarios anchor
     // a genuinely fresh window on the next launch/foreground.
     LimitedTimeOfferManager.shared.debugClearAllState()
+    // Free the launch slot so the scenario's sheet isn't blocked by whatever
+    // claimed this launch before the scenario was applied.
+    LaunchModalCoordinator.shared.resetForDebug()
     trialOfferManager.applyDebugScenario(scenario, currentDoodleCount: doodleCount)
     funnelStatusMessage = scenario.hint
   }
@@ -306,6 +309,9 @@ struct DeveloperOptionsView: View {
 
       Button {
         ChangelogManager.shared.resetChangelogState()
+        // Clear the launch slot too, or the reset changelog and the paywalls
+        // both think this launch was already decided.
+        LaunchModalCoordinator.shared.resetForDebug()
         print("DEBUG: Changelog state reset - will show on next launch")
       } label: {
         row(icon: "arrow.counterclockwise", color: .indigo, title: "Reset Changelog State")

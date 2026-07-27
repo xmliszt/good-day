@@ -111,6 +111,17 @@ actor RemoteChangelogService {
     /// Cache duration in seconds (5 minutes)
     private let cacheDuration: TimeInterval = 300
 
+    /// Launch presentation waits on this fetch, so it gets a short leash rather
+    /// than the default 60s: past the timeout the bundled notes are used, which
+    /// is a far better outcome than a launch that decides what to show a minute
+    /// after the user opened the app.
+    private let session: URLSession = {
+      let configuration = URLSessionConfiguration.default
+      configuration.timeoutIntervalForRequest = 5
+      configuration.timeoutIntervalForResource = 10
+      return URLSession(configuration: configuration)
+    }()
+
     private init() {}
 
     // MARK: - Public API
@@ -131,7 +142,7 @@ actor RemoteChangelogService {
         }
 
         do {
-            let (data, response) = try await URLSession.shared.data(from: url)
+            let (data, response) = try await session.data(from: url)
 
             guard let httpResponse = response as? HTTPURLResponse else {
                 throw ChangelogServiceError.networkError(URLError(.badServerResponse))
@@ -186,7 +197,7 @@ actor RemoteChangelogService {
         }
 
         do {
-            let (data, response) = try await URLSession.shared.data(from: url)
+            let (data, response) = try await session.data(from: url)
 
             guard let httpResponse = response as? HTTPURLResponse else {
                 throw ChangelogServiceError.networkError(URLError(.badServerResponse))
