@@ -340,17 +340,24 @@ struct ContentView: View {
       // against the edge, same height — so the bubble points at the spot to drag
       // from, instead of at the screen-tall grab band above (whose frame would
       // put the bubble off the bottom of the screen).
+      //
+      // `.featureTip` goes on the *sized* view, before the frame that expands it
+      // to fill the screen: the modifier reports the frame of whatever it is
+      // attached to, so attaching it after the expansion registers a
+      // full-screen, safe-area-ignoring rect. That makes the overlay's
+      // above/below math read a negative `spaceAbove`/`spaceBelow` and park the
+      // bubble off the top of the screen, clipped by the notch (JOO-148 review).
       Color.clear
         .frame(width: 48, height: 275)
+        .featureTip(
+          tipAnchorID,
+          isEnabled: context == .referencePhoto && !tempZoomCommitted,
+          resolution: .none)
         .frame(maxWidth: .infinity, maxHeight: .infinity,
                alignment: tempEdge == .leading ? .bottomLeading : .bottomTrailing)
         .padding(.bottom, 80)
         .ignoresSafeArea()
         .allowsHitTesting(false)
-        .featureTip(
-          tipAnchorID,
-          isEnabled: context == .referencePhoto && !tempZoomCommitted,
-          resolution: .none)
     }
     // In-the-moment only: clear the temporary control whenever the active zoom
     // context changes — the ruler goes away (capture, cancel, the system Camera
@@ -738,9 +745,15 @@ struct ContentView: View {
             onOffsetChange: { cameraContext.backdropOffset = $0 }
           )
           // Steps 5 and 6 (scrub, then double-tap to re-center), same pattern.
+          // Also gated on the pad having somewhere to go: travel is exactly zero
+          // at 1× (the photo already covers the canvas), so without this the tips
+          // teach a gesture that provably does nothing — the user can reach them
+          // by tapping through steps 1–4 without ever zooming (JOO-148 review).
+          // They surface as soon as zoom opens up travel.
           .featureTip(
             FeatureTipDefinitions.AnchorID.photoTranslationPad,
-            isEnabled: showPhotoAdjust, resolution: .touch)
+            isEnabled: showPhotoAdjust && cameraContext.backdropTranslationRange > 0,
+            resolution: .touch)
         }
         // Lifts the panel off whatever it floats over — its black plate would
         // otherwise merge into the dark backdrop behind the canvas.
