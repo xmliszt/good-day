@@ -370,8 +370,11 @@ struct PhotoRotationDial: View {
     )
     .clipShape(RoundedRectangle(cornerRadius: outerCornerRadius, style: .continuous))
     .overlay(
+      // Same weight as the pad's own outline: everything on the band is muted at
+      // rest, so a dimmer border than the pad's left the ring barely readable —
+      // the dial looked like a shadow around the pad rather than a control.
       RoundedRectangle(cornerRadius: outerCornerRadius, style: .continuous)
-        .stroke(Color.white.opacity(0.12), lineWidth: 1)
+        .stroke(Color.white.opacity(0.2), lineWidth: 1)
     )
     .contentShape(RoundedRectangle(cornerRadius: outerCornerRadius, style: .continuous))
     .gesture(dialDrag)

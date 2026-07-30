@@ -40,6 +40,8 @@ enum FeatureTipDefinitions {
         /// The 2-axis translation pad. Hosts two tips (scrub, then double-tap to
         /// re-center) off one anchor.
         static let photoTranslationPad = "featureTip.photoTranslation.pad"
+        /// The checkmark button in the drawing canvas's top row.
+        static let canvasFinish = "featureTip.canvasFinish"
     }
 
     /// Stable scope identifiers for `.scoped` tips. A scope is a whole screen
@@ -64,7 +66,24 @@ enum FeatureTipDefinitions {
     /// retires both wordings.
     private static let photoEdgeZoomFeature = "photoEdgeZoom"
 
-    // Priorities 10…20 are the camera / reference-photo gesture tips. Every
+    /// Shared key for the ruler-drag lesson. The live-camera ruler and the
+    /// reference-photo one are the same control taught the same way, and they
+    /// appear back to back (drag to zoom, shoot, then adjust the photo) — so
+    /// working either one retires the lesson instead of restating it verbatim.
+    private static let zoomDragFeature = "zoomDrag"
+
+    /// Points to pull a zoom-ruler tip's attach point down into the ruler. The
+    /// ruler's top ~64pt is the ogee that morphs it into the screen edge, so a
+    /// bubble hung off the container's top edge floats over empty space; this
+    /// lands the beak on the ruler's solid body instead.
+    private static let zoomRulerInset: CGFloat = 40
+
+    /// Points to pull a translation-pad tip's attach point down into the pad.
+    /// The pad is ringed by the rotation dial's 20pt band, whose indicator dot
+    /// sits at top center — right where an un-inset beak would point.
+    private static let translationPadInset: CGFloat = 24
+
+    // Priorities 11…20 are the camera / reference-photo gesture tips. Every
     // reference-photo control is on screen at once, so priority alone decides
     // the order the bubbles walk the user through them: zoom (16), the pull-out
     // ruler on the other edge (15), rotate (14), level (13), move (12),
@@ -146,17 +165,20 @@ enum FeatureTipDefinitions {
         FeatureTip(
             id: "featureTip.cameraZoom.ruler",
             anchorID: AnchorID.cameraZoomRuler,
-            featureKey: "cameraZoomDrag",
+            featureKey: zoomDragFeature,
             message: "Try dragging to zoom",
+            targetInset: zoomRulerInset,
             priority: 20,
             showsAfterOnboarding: true
         ),
         // Reference photo, step 1 of 6: the zoom ruler on the handedness edge.
+        // Shares the live camera's feature key — same control, same lesson.
         FeatureTip(
             id: "featureTip.photoZoom.ruler",
             anchorID: AnchorID.photoZoomRuler,
-            featureKey: "photoZoomDrag",
+            featureKey: zoomDragFeature,
             message: "Try dragging to zoom",
+            targetInset: zoomRulerInset,
             priority: 16,
             showsAfterOnboarding: true
         ),
@@ -167,6 +189,7 @@ enum FeatureTipDefinitions {
             anchorID: AnchorID.photoEdgeZoomLeading,
             featureKey: photoEdgeZoomFeature,
             message: "Drag out from the left edge",
+            targetInset: zoomRulerInset,
             priority: 15,
             showsAfterOnboarding: true
         ),
@@ -175,6 +198,7 @@ enum FeatureTipDefinitions {
             anchorID: AnchorID.photoEdgeZoomTrailing,
             featureKey: photoEdgeZoomFeature,
             message: "Drag out from the right edge",
+            targetInset: zoomRulerInset,
             priority: 15,
             showsAfterOnboarding: true
         ),
@@ -195,12 +219,27 @@ enum FeatureTipDefinitions {
             priority: 13,
             showsAfterOnboarding: true
         ),
+        // How to leave the expanded canvas. Tapping the surrounding backdrop used
+        // to collapse it, so a user who reaches for that now gets nothing and
+        // reads it as a bug — the checkmark is the only way out. Priority 10 puts
+        // it directly under the gesture band: while the reference-photo controls
+        // are up the user is mid-adjustment, not hunting for the exit, so that
+        // sequence runs first; everywhere else this outranks every other tip.
+        FeatureTip(
+            id: "featureTip.canvasFinish",
+            anchorID: AnchorID.canvasFinish,
+            featureKey: "canvasFinish",
+            message: "Tap here to finish your doodle",
+            priority: 10,
+            showsAfterOnboarding: true
+        ),
         // Steps 5 and 6: the translation pad — scrubbing it, then re-centering.
         FeatureTip(
             id: "featureTip.photoTranslation.drag",
             anchorID: AnchorID.photoTranslationPad,
             featureKey: "photoTranslationDrag",
             message: "Drag the pad to move the photo",
+            targetInset: translationPadInset,
             priority: 12,
             showsAfterOnboarding: true
         ),
@@ -209,6 +248,7 @@ enum FeatureTipDefinitions {
             anchorID: AnchorID.photoTranslationPad,
             featureKey: "photoTranslationRecenter",
             message: "Double-tap to re-center the photo",
+            targetInset: translationPadInset,
             priority: 11,
             showsAfterOnboarding: true
         )

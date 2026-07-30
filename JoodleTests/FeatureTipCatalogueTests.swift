@@ -88,6 +88,60 @@ struct FeatureTipCatalogueTests {
     #expect(Set(steps).count == steps.count)
   }
 
+  /// The live-camera ruler and the reference-photo ruler are the same control
+  /// taught the same way, and they surface back to back (drag to zoom, shoot,
+  /// then adjust the photo) — so working either one must retire both wordings
+  /// instead of restating the lesson verbatim.
+  @Test func bothZoomRulersShareOneFeatureKey() {
+    let camera = tip("featureTip.cameraZoom.ruler")
+    let photo = tip("featureTip.photoZoom.ruler")
+    #expect(camera?.featureKey == photo?.featureKey)
+    #expect(camera?.anchorID != photo?.anchorID)
+    #expect(camera?.message.key == photo?.message.key)
+  }
+
+  /// Every tip whose target's frame is padded with something visually empty (the
+  /// ruler's edge flare) or wrapped by another control (the pad, ringed by the
+  /// rotation dial) needs its attach point pulled inside, or the beak points at
+  /// the wrong thing.
+  @Test func tipsOnPaddedTargetsInsetTheirAttachPoint() {
+    let inset = [
+      "featureTip.cameraZoom.ruler",
+      "featureTip.photoZoom.ruler",
+      "featureTip.photoEdgeZoom.leading",
+      "featureTip.photoEdgeZoom.trailing",
+      "featureTip.photoTranslation.drag",
+      "featureTip.photoTranslation.recenter",
+    ]
+    for id in inset {
+      #expect((tip(id)?.targetInset ?? 0) > 0, "\(id) points at its target's outer bounds")
+    }
+    // The belt is the outermost control, so it attaches to its own edge.
+    #expect(tip("featureTip.photoRotation.drag")?.targetInset == 0)
+    #expect(tip("featureTip.photoRotation.reset")?.targetInset == 0)
+  }
+
+  /// The checkmark is now the only way out of the expanded canvas, so its tip
+  /// must outrank every non-gesture tip — but stay under the reference-photo
+  /// sequence, which the user is mid-flow in when those controls are up.
+  @Test func canvasFinishTipSitsBetweenTheGestureBandAndTheRest() {
+    let finish = tip("featureTip.canvasFinish")
+    #expect(finish != nil)
+    guard let finish else { return }
+    let gestureIDs = Set(photoSequence + ["featureTip.cameraZoom.ruler"])
+    let lowestGesture = FeatureTipDefinitions.all
+      .filter { gestureIDs.contains($0.id) }
+      .map(\.priority).min()
+    let highestOther = FeatureTipDefinitions.all
+      .filter { !gestureIDs.contains($0.id) && $0.id != finish.id }
+      .map(\.priority).max()
+    #expect(lowestGesture.map { finish.priority < $0 } == true)
+    #expect(highestOther.map { finish.priority > $0 } == true)
+    // The onboarding tutorial never highlights the checkmark, so it must survive
+    // the blanket suppression applied when onboarding completes.
+    #expect(finish.showsAfterOnboarding == true)
+  }
+
   /// The two pull-out wordings are one feature: whichever edge the user drags
   /// from, the other wording must never resurface.
   @Test func edgeZoomWordingsShareOneFeatureKey() {

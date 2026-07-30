@@ -330,6 +330,12 @@ struct DrawingCanvasView: View {
           .circularGlassButton()
           .disabled(isSaving)
           .tutorialHighlightAnchor(.button(id: .canvasSaveButton), cornerRadius: 22)
+          // Same gating rationale as the camera button's tip below: the canvas
+          // stays tucked in the tree when collapsed, and the bubble must not
+          // paint over the paywall lock overlay.
+          .featureTip(
+            FeatureTipDefinitions.AnchorID.canvasFinish,
+            isEnabled: isShowing && canEditOrCreate)
         }
         .disabled(!canEditOrCreate)
         .background(Color.clear)

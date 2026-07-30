@@ -65,6 +65,14 @@ struct FeatureTip: Identifiable {
     /// Where the beak points within the target frame.
     let horizontalTarget: FeatureTipHorizontalTarget
 
+    /// Points to pull the bubble's attach edge *into* the target frame, so the
+    /// beak points at the part of the control that actually reads as the control
+    /// rather than at its outer bounds. Needed when a target's frame is padded
+    /// with something visually empty (the zoom ruler's edge flare) or wrapped by
+    /// another control (the translation pad, ringed by the rotation dial's band).
+    /// Clamped to half the frame's height at render time.
+    let targetInset: CGFloat
+
     /// Higher wins when several tips are eligible on the same screen — only one
     /// shows at a time.
     let priority: Int
@@ -91,6 +99,7 @@ struct FeatureTip: Identifiable {
         message: LocalizedStringResource,
         behavior: FeatureTipBehavior = .anchorVisible,
         horizontalTarget: FeatureTipHorizontalTarget = .center,
+        targetInset: CGFloat = 0,
         priority: Int = 0,
         requiresPremium: Bool = false,
         showsAfterOnboarding: Bool = false
@@ -101,6 +110,7 @@ struct FeatureTip: Identifiable {
         self.message = message
         self.behavior = behavior
         self.horizontalTarget = horizontalTarget
+        self.targetInset = targetInset
         self.priority = priority
         self.requiresPremium = requiresPremium
         self.showsAfterOnboarding = showsAfterOnboarding
