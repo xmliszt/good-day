@@ -486,6 +486,15 @@ struct ContentView: View {
       // devices it tucks behind the cutout when collapsed; on notch / other
       // devices it sits just below the top safe area as a floating panel.
       if dataProvider.selectedDateItem != nil {
+        // Whether a backdrop tap may close the canvas. It may only when the
+        // backdrop really is empty: the moment a reference photo or the live
+        // camera is up, the area around the container belongs to their own
+        // controls — the edge zoom ruler, the rotation dial and translation pad,
+        // the shutter — and reaching for one of those with the canvas closing
+        // under you is the worse failure. With a bare backdrop there's nothing
+        // down there to reach for, so the shortcut costs nothing.
+        let canTapBackdropToDismiss = cameraContext.backdropImage == nil
+          && cameraContext.mode != .live
         DynamicIslandExpandedView(
           isExpanded: $showDrawingCanvas,
           content: {
@@ -508,20 +517,18 @@ struct ContentView: View {
           onDismiss: {
             requestCanvasSaveAndDismiss()
           },
-          // A backdrop tap must never close the canvas: the surrounding area is
-          // easy to catch while drawing — and doubly so while reaching for the
-          // photo adjust controls that sit outside the container — and losing an
-          // in-progress doodle to a stray touch is unrecoverable. The tap is
-          // still absorbed by the container so it can't fall through to the
-          // grid behind.
-          dismissOnTapOutside: false,
-          // ...but a user who keeps tapping there is reaching for the dismissal
-          // that used to live on the backdrop, so point them at the checkmark
-          // that replaced it.
-          onBackdropTap: {
-            FeatureTipManager.shared.registerMissedTap(
-              nudging: FeatureTipDefinitions.TipID.canvasFinish)
-          }
+          // Either way the tap is absorbed by the container, so it can never
+          // fall through to the grid behind.
+          dismissOnTapOutside: canTapBackdropToDismiss,
+          // Only worth watching while the shortcut is off — that's when a tap
+          // there does nothing, and someone repeating it is reaching for the
+          // dismissal it used to give them. Point them at the checkmark instead.
+          onBackdropTap: canTapBackdropToDismiss
+            ? nil
+            : {
+              FeatureTipManager.shared.registerMissedTap(
+                nudging: FeatureTipDefinitions.TipID.canvasFinish)
+            }
         )
         .id("DynamicIslandExpandedView-\(dataProvider.selectedDateItem?.id ?? "none")")
       }

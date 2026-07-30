@@ -105,9 +105,10 @@ struct DynamicIslandExpandedView<Content: View>: View {
   /// exactly rather than the parent view's full-screen frame.
   let tutorialAnchorID: String?
   /// Whether tapping the backdrop outside the visible container fires
-  /// `onDismiss`. Both hosts disable it — the daily canvas because a stray
-  /// backdrop touch would silently end an in-progress doodle (only its
-  /// checkmark dismisses), the interactive tutorial because dismissal is driven
+  /// `onDismiss`. The daily canvas enables it only while the backdrop is truly
+  /// empty, since a reference photo or the live camera puts controls out there
+  /// that a stray tap would otherwise close the canvas instead of hitting; the
+  /// interactive tutorial always disables it, because dismissal is driven
   /// explicitly per step and an out-of-band close would wedge the flow. Either
   /// way the tap is still absorbed by the backdrop rather than falling through.
   let dismissOnTapOutside: Bool
