@@ -563,7 +563,7 @@ struct ContentView: View {
         ShutterButton(style: .glass) {
           Task { await cameraContext.capture() }
         }
-        .disabled(cameraContext.isShutterCycling)
+        .disabled(cameraContext.isShutterCycling || cameraContext.isCapturing)
         .padding(.bottom, 32)
       }
       .ignoresSafeArea(.container, edges: .bottom)

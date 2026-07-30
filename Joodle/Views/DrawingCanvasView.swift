@@ -554,16 +554,10 @@ struct DrawingCanvasView: View {
     .onChange(of: albumPickerItem) { _, newItem in
       guard let newItem else { return }
       Task {
-        if let data = try? await newItem.loadTransferable(type: Data.self),
-           let raw = UIImage(data: data) {
-          let cropped = centerCroppedSquare(raw)
-          await MainActor.run {
-            cameraContext.resetBackdropTransform()
-            cameraContext.backdropImage = cropped
-            cameraContext.cancelLive()
-          }
+        await cameraContext.importReference {
+          try? await newItem.loadTransferable(type: Data.self)
         }
-        await MainActor.run { albumPickerItem = nil }
+        albumPickerItem = nil
       }
     }
     .preferredColorScheme(.dark)
@@ -657,32 +651,6 @@ struct DrawingCanvasView: View {
 
   // MARK: - Camera Reference
 
-  /// Render the picked image upright, then center-crop to a square so the
-  /// backdrop matches the canvas aspect.
-  private func centerCroppedSquare(_ image: UIImage) -> UIImage {
-    let upright: UIImage = {
-      if image.imageOrientation == .up { return image }
-      let format = UIGraphicsImageRendererFormat()
-      format.scale = image.scale
-      format.opaque = true
-      let renderer = UIGraphicsImageRenderer(size: image.size, format: format)
-      return renderer.image { _ in
-        image.draw(in: CGRect(origin: .zero, size: image.size))
-      }
-    }()
-    let s = min(upright.size.width, upright.size.height)
-    let format = UIGraphicsImageRendererFormat()
-    format.scale = upright.scale
-    format.opaque = true
-    let renderer = UIGraphicsImageRenderer(size: CGSize(width: s, height: s), format: format)
-    return renderer.image { _ in
-      let xOff = (upright.size.width - s) / 2
-      let yOff = (upright.size.height - s) / 2
-      upright.draw(at: CGPoint(x: -xOff, y: -yOff))
-    }
-  }
-
-
   private var cameraPermissionAlertBinding: Binding<Bool> {
     Binding(
       get: { isCameraFeatureActive && cameraContext.showPermissionDeniedAlert },
@@ -736,7 +704,7 @@ struct DrawingCanvasView: View {
       Image(systemName: "photo.on.rectangle")
     }
     .circularGlassButton()
-    .disabled(isShutterCycling)
+    .disabled(isShutterCycling || cameraIsCapturing)
   }
 
   /// Top-left button in camera live mode — exits the camera back to the
