@@ -212,15 +212,28 @@ struct DrawingCanvasView: View {
     return entry?.drawingData != nil
   }
 
+  /// True while a persisted doodle is still being decoded and applied, so an
+  /// empty `paths` does not yet mean an empty canvas. `drawingStateLoaded` only
+  /// flips once the decoded strokes actually land (`applyPendingStrokes`), which
+  /// is the whole in-flight window.
+  private var isLoadingExistingDoodle: Bool {
+    entryHasDoodle && !drawingStateLoaded
+  }
+
   /// Whether the camera reference button (top-left) should be visible.
   /// Mirrors the bulb button visibility logic — hidden once any stroke exists
   /// and hidden while the camera live mode is active (the top row is empty
   /// except for the flip-camera button at the center).
   private var canShowCameraButton: Bool {
-    // Never offer the camera slot for an entry that already has a doodle —
-    // `paths` is briefly empty while the async decode is in flight, which used
-    // to flash the camera button before it flipped to the trash button.
-    guard isCameraFeatureActive, !entryHasDoodle, paths.isEmpty, currentPath.isEmpty, !isCameraLive else {
+    // Gate on the load being in flight, NOT on the entry merely having a doodle.
+    // `paths` is briefly empty while the async decode runs, which used to flash
+    // the camera button before it flipped to the trash — but vetoing on
+    // `entryHasDoodle` outright meant clearing an existing doodle left the slot
+    // empty: the clear deliberately isn't persisted until dismiss, so the entry
+    // still has data while the canvas in front of the user is blank, and the
+    // trash unmounts at that same moment.
+    guard isCameraFeatureActive, !isLoadingExistingDoodle,
+          paths.isEmpty, currentPath.isEmpty, !isCameraLive else {
       return false
     }
     // In the camera tutorial, hide the button once a reference has been
