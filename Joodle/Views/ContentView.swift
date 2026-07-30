@@ -259,6 +259,12 @@ struct ContentView: View {
     let hiddenOffset: CGFloat = tempEdge == .trailing ? 140 : -140
     // Inward drag distance (points) for the ruler to fully emerge.
     let pullDistance: CGFloat = 120
+    // Feature tip that teaches this pull. Its copy names the edge to drag from,
+    // so there's one anchor per edge and only the live one is registered. Scoped
+    // to the reference-photo pass: live camera has its own single zoom tip.
+    let tipAnchorID = tempEdge == .leading
+      ? FeatureTipDefinitions.AnchorID.photoEdgeZoomLeading
+      : FeatureTipDefinitions.AnchorID.photoEdgeZoomTrailing
 
     Group {
       // The temporary ruler. Its horizontal offset interpolates from fully
@@ -315,7 +321,12 @@ struct ContentView: View {
             tempZoomReveal = commit ? 1 : 0
             tempZoomCommitted = commit
           }
-          if commit { Haptic.play() }
+          if commit {
+            Haptic.play()
+            // The pull is what resolves the tip — the grab band is a separate
+            // recognizer, so the anchor view itself never sees the touch.
+            FeatureTipManager.shared.markSeen(anchorID: tipAnchorID)
+          }
         }
       )
       .frame(width: 44)
@@ -324,6 +335,29 @@ struct ContentView: View {
              alignment: tempEdge == .leading ? .leading : .trailing)
       .ignoresSafeArea()
       .allowsHitTesting(isShowing && !tempZoomCommitted)
+
+      // Anchor for the pull tip. It mirrors where the ruler emerges — flush
+      // against the edge, same height — so the bubble points at the spot to drag
+      // from, instead of at the screen-tall grab band above (whose frame would
+      // put the bubble off the bottom of the screen).
+      //
+      // `.featureTip` goes on the *sized* view, before the frame that expands it
+      // to fill the screen: the modifier reports the frame of whatever it is
+      // attached to, so attaching it after the expansion registers a
+      // full-screen, safe-area-ignoring rect. That makes the overlay's
+      // above/below math read a negative `spaceAbove`/`spaceBelow` and park the
+      // bubble off the top of the screen, clipped by the notch (JOO-148 review).
+      Color.clear
+        .frame(width: 48, height: 275)
+        .featureTip(
+          tipAnchorID,
+          isEnabled: context == .referencePhoto && !tempZoomCommitted,
+          resolution: .none)
+        .frame(maxWidth: .infinity, maxHeight: .infinity,
+               alignment: tempEdge == .leading ? .bottomLeading : .bottomTrailing)
+        .padding(.bottom, 80)
+        .ignoresSafeArea()
+        .allowsHitTesting(false)
     }
     // In-the-moment only: clear the temporary control whenever the active zoom
     // context changes — the ruler goes away (capture, cancel, the system Camera
@@ -568,6 +602,12 @@ struct ContentView: View {
             edge: .leading,
             onChange: { cameraContext.setZoom($0) }
           )
+          // The tip anchors on the ruler itself, not the full-screen HStack, so
+          // the bubble sits right against it. Only one of the two edge branches
+          // renders, so the anchor is never registered twice.
+          .featureTip(
+            FeatureTipDefinitions.AnchorID.cameraZoomRuler,
+            isEnabled: showZoomSlider, resolution: .touch)
         }
         Spacer(minLength: 0)
         if zoomSliderEdge == .trailing {
@@ -578,6 +618,9 @@ struct ContentView: View {
             edge: .trailing,
             onChange: { cameraContext.setZoom($0) }
           )
+          .featureTip(
+            FeatureTipDefinitions.AnchorID.cameraZoomRuler,
+            isEnabled: showZoomSlider, resolution: .touch)
         }
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
@@ -649,6 +692,10 @@ struct ContentView: View {
             edge: .leading,
             onChange: { cameraContext.setBackdropZoom($0) }
           )
+          // Step 1 of the photo-adjust tip sequence.
+          .featureTip(
+            FeatureTipDefinitions.AnchorID.photoZoomRuler,
+            isEnabled: showPhotoAdjust, resolution: .touch)
         }
         Spacer(minLength: 0)
         if zoomSliderEdge == .trailing {
@@ -659,6 +706,9 @@ struct ContentView: View {
             edge: .trailing,
             onChange: { cameraContext.setBackdropZoom($0) }
           )
+          .featureTip(
+            FeatureTipDefinitions.AnchorID.photoZoomRuler,
+            isEnabled: showPhotoAdjust, resolution: .touch)
         }
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
@@ -684,11 +734,26 @@ struct ContentView: View {
             onRotationChange: { cameraContext.setBackdropRotation($0) },
             innerSide: PhotoTranslationPad.containerSide
           )
+          // Steps 3 and 4 (turn, then double-tap to level) both hang off this
+          // one anchor, so a touch on the belt retires only the bubble showing.
+          .featureTip(
+            FeatureTipDefinitions.AnchorID.photoRotationBelt,
+            isEnabled: showPhotoAdjust, resolution: .touch)
           PhotoTranslationPad(
             offset: cameraContext.backdropOffset,
             translationRange: cameraContext.backdropTranslationRange,
             onOffsetChange: { cameraContext.backdropOffset = $0 }
           )
+          // Steps 5 and 6 (scrub, then double-tap to re-center), same pattern.
+          // Also gated on the pad having somewhere to go: travel is exactly zero
+          // at 1× (the photo already covers the canvas), so without this the tips
+          // teach a gesture that provably does nothing — the user can reach them
+          // by tapping through steps 1–4 without ever zooming (JOO-148 review).
+          // They surface as soon as zoom opens up travel.
+          .featureTip(
+            FeatureTipDefinitions.AnchorID.photoTranslationPad,
+            isEnabled: showPhotoAdjust && cameraContext.backdropTranslationRange > 0,
+            resolution: .touch)
         }
         // Lifts the panel off whatever it floats over — its black plate would
         // otherwise merge into the dark backdrop behind the canvas.

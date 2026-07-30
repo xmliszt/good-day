@@ -175,6 +175,16 @@ final class FeatureTipManager: ObservableObject {
         recompute()
     }
 
+    /// Dismiss the tip currently pointing at the given anchor, if any. For
+    /// gestures that resolve a tip without the anchor view itself seeing the
+    /// touch — e.g. the screen-edge pull, whose grab band is a separate,
+    /// screen-tall recognizer. Ignores anchors whose tip isn't on screen, so a
+    /// hint the user never saw is never silently retired.
+    func markSeen(anchorID: String) {
+        guard let active = activeTip, active.anchorID == anchorID else { return }
+        markSeen(active.id)
+    }
+
     /// Suppress every currently-defined tip. Call once on the user's first
     /// onboarding completion so new installs don't see tooltips for features
     /// the onboarding tutorial already covered.

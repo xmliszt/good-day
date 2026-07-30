@@ -616,11 +616,11 @@ struct SettingsView: View {
         }
       }
       // Stage 1 of the Wiggly Strokes discovery. Tapping only advances into the
-      // Customization screen (resolveOnTap: false); the toggle there resolves the tip.
-      .featureTip(FeatureTipDefinitions.AnchorID.wigglyCustomizationRow, resolveOnTap: false)
+      // Customization screen (resolution: .none); the toggle there resolves the tip.
+      .featureTip(FeatureTipDefinitions.AnchorID.wigglyCustomizationRow, resolution: .none)
       // Stage 1 of the rainbow theme discovery, sharing this same row. Advances
       // into the Customization screen; the rainbow swatch there resolves the tip.
-      .featureTip(FeatureTipDefinitions.AnchorID.rainbowCustomizationRow, resolveOnTap: false)
+      .featureTip(FeatureTipDefinitions.AnchorID.rainbowCustomizationRow, resolution: .none)
 
       // Interactions
       NavigationLink {
