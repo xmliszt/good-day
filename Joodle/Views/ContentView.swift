@@ -85,7 +85,7 @@ struct ContentView: View {
 
   /// Temporary edge-drag zoom control (JOO-147). When the user drags inward from
   /// the screen edge *opposite* their handedness preference, a second, identical
-  /// zoom ruler is pulled out of that edge. `tempZoomReveal` (0…1) tracks how far
+  /// zoom ruler is pulled out of that edge. `tempZoomReveal` tracks how far
   /// it has emerged — set live from the drag so it follows the finger — and
   /// `tempZoomCommitted` records whether a released drag came out far enough to
   /// stay. Both are in-the-moment view state only; they never touch the
@@ -227,7 +227,7 @@ struct ContentView: View {
 
   /// Temporary edge-drag zoom control (JOO-147). Rendered on the edge *opposite*
   /// the user's handedness preference. A thin invisible grab strip on that edge
-  /// tracks an inward drag into `tempZoomReveal` (0…1), which slides a second,
+  /// tracks an inward drag into `tempZoomReveal`, which grows a second,
   /// identical zoom ruler out of the edge in real time; releasing past the
   /// halfway point commits it (it stays out and takes over its own zoom drag),
   /// otherwise it retracts. Both rulers drive the same live zoom and the
@@ -311,14 +311,27 @@ struct ContentView: View {
       ScreenEdgePanCatcher(
         edge: tempEdge,
         onChanged: { inward in
-          tempZoomReveal = EdgeDragReveal.revealFraction(
-            inwardTranslation: inward, pullDistance: pullDistance)
+          // Elastic past full emergence: the panel keeps stretching inward under
+          // the finger with `UIScrollView`'s resistance curve, so pulling harder
+          // gives progressively less and never runs away.
+          tempZoomReveal = EdgeDragReveal.elasticReveal(
+            inwardTranslation: inward,
+            pullDistance: pullDistance,
+            panelWidth: CameraZoomSlider.panelWidth)
         },
         onEnded: { inward in
           let reveal = EdgeDragReveal.revealFraction(
             inwardTranslation: inward, pullDistance: pullDistance)
           let commit = EdgeDragReveal.shouldCommit(reveal: reveal)
-          withAnimation(.easeOut(duration: 0.25)) {
+          // Spring, not an ease: a stretched membrane should settle like one. The
+          // committing spring is lightly underdamped so it recoils past flush and
+          // back — now safe to do, because a reveal past 1 renders as a stretch
+          // instead of tearing the panel off the edge. Retracting stays damped:
+          // an overshoot there would only push the panel further off-screen.
+          let settle: Animation = commit
+            ? .spring(response: 0.34, dampingFraction: 0.72)
+            : .spring(response: 0.28, dampingFraction: 0.92)
+          withAnimation(settle) {
             tempZoomReveal = commit ? 1 : 0
             tempZoomCommitted = commit
           }
@@ -615,6 +628,7 @@ struct ContentView: View {
             range: zoomCaps.minDisplayZoom...max(zoomCaps.minDisplayZoom, zoomCaps.maxDisplayZoom),
             keyFactors: zoomCaps.keyZoomFactors,
             edge: .leading,
+            reveal: showZoomSlider ? 1 : 0,
             onChange: { cameraContext.setZoom($0) }
           )
           // The tip anchors on the ruler itself, not the full-screen HStack, so
@@ -631,6 +645,7 @@ struct ContentView: View {
             range: zoomCaps.minDisplayZoom...max(zoomCaps.minDisplayZoom, zoomCaps.maxDisplayZoom),
             keyFactors: zoomCaps.keyZoomFactors,
             edge: .trailing,
+            reveal: showZoomSlider ? 1 : 0,
             onChange: { cameraContext.setZoom($0) }
           )
           .featureTip(
@@ -642,11 +657,12 @@ struct ContentView: View {
       .padding(.bottom, 80)
       .ignoresSafeArea()
       .opacity(showZoomSlider ? 1 : 0)
-      .offset(x: showZoomSlider ? 0 : (zoomSliderEdge == .trailing ? 140 : -140))
       .allowsHitTesting(showZoomSlider)
-      // Ease-out slide out of / back into the screen edge. No bounce: an
-      // overshoot would pull the panel inward off the edge and break the morph.
-      .animation(.easeOut(duration: 0.28), value: showZoomSlider)
+      // The panel grows out of the edge rather than sliding in from off-screen,
+      // so it enters the same way the edge-pull ruler does. A bounce is fine now
+      // — the silhouette renders an overshoot past full as a stretch, where the
+      // old fixed shape would have been pulled off the edge and broken the morph.
+      .animation(.spring(response: 0.32, dampingFraction: 0.74), value: showZoomSlider)
 
       // Temporary edge-drag zoom control (JOO-147) — on the NON-default edge.
       // Dragging inward from the opposite screen edge pulls a second, identical
@@ -705,6 +721,7 @@ struct ContentView: View {
             range: CameraReferenceContext.photoZoomRange,
             keyFactors: CameraReferenceContext.photoZoomKeyFactors,
             edge: .leading,
+            reveal: showPhotoAdjust ? 1 : 0,
             onChange: { cameraContext.setBackdropZoom($0) }
           )
           // Step 1 of the photo-adjust tip sequence.
@@ -719,6 +736,7 @@ struct ContentView: View {
             range: CameraReferenceContext.photoZoomRange,
             keyFactors: CameraReferenceContext.photoZoomKeyFactors,
             edge: .trailing,
+            reveal: showPhotoAdjust ? 1 : 0,
             onChange: { cameraContext.setBackdropZoom($0) }
           )
           .featureTip(
@@ -730,9 +748,9 @@ struct ContentView: View {
       .padding(.bottom, 80)
       .ignoresSafeArea()
       .opacity(showPhotoAdjust ? 1 : 0)
-      .offset(x: showPhotoAdjust ? 0 : (zoomSliderEdge == .trailing ? 140 : -140))
       .allowsHitTesting(showPhotoAdjust)
-      .animation(.easeOut(duration: 0.28), value: showPhotoAdjust)
+      // Same emergence as the live-camera ruler above.
+      .animation(.spring(response: 0.32, dampingFraction: 0.74), value: showPhotoAdjust)
 
       // Native-Camera-style 2-axis translation pad wrapped by the rotation
       // dial, centered above the bottom edge. The dial is a polaroid-style bezel

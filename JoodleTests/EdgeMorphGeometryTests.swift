@@ -33,9 +33,32 @@ struct EdgeMorphGeometryTests {
     #expect(abs(EdgeMorphGeometry.protrusion(reveal: 0.5, width: width) - 24) < 0.0001)
   }
 
-  @Test func protrusionClampsOutOfRangeReveals() {
+  @Test func protrusionClampsANegativeReveal() {
     #expect(EdgeMorphGeometry.protrusion(reveal: -0.5, width: width) == 0)
-    #expect(EdgeMorphGeometry.protrusion(reveal: 1.5, width: width) == width)
+  }
+
+  /// Above 1 is an elastic overpull, not an error: it has to keep growing so the
+  /// panel stretches inward off the edge.
+  @Test func protrusionGrowsPastFullForAnOverpull() {
+    #expect(EdgeMorphGeometry.protrusion(reveal: 1.5, width: width) > width)
+    #expect(abs(EdgeMorphGeometry.protrusion(reveal: 1.5, width: width) - width * 1.5) < 0.0001)
+  }
+
+  /// An overpull must stretch the panel *only* — not also re-loosen the neck or
+  /// distort the height, which would read as the shape coming apart.
+  @Test func overpullLeavesEverythingButProtrusionAtItsFullValue() {
+    let visibleAtFull = EdgeMorphGeometry.visibleHeight(reveal: 1, height: height)
+    let visibleOver = EdgeMorphGeometry.visibleHeight(reveal: 1.6, height: height)
+    #expect(abs(visibleOver - visibleAtFull) < 0.0001)
+
+    let spanAtFull = EdgeMorphGeometry.flareSpan(
+      reveal: 1, flareHeight: flareHeight, height: height)
+    let spanOver = EdgeMorphGeometry.flareSpan(
+      reveal: 1.6, flareHeight: flareHeight, height: height)
+    #expect(abs(spanOver - spanAtFull) < 0.0001)
+
+    #expect(abs(EdgeMorphGeometry.flareHandle(reveal: 1.6)
+      - EdgeMorphGeometry.flareHandle(reveal: 1)) < 0.0001)
   }
 
   // MARK: - visibleHeight

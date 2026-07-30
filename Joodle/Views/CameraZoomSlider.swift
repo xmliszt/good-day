@@ -7,8 +7,10 @@ import SwiftUI
 import UIKit
 
 /// Pure geometry for the temporary edge-drag zoom reveal (JOO-147): maps how far
-/// the finger has dragged inward from a screen edge into a 0…1 "reveal" fraction,
-/// and decides whether a released drag has come out far enough to stay put.
+/// the finger has dragged inward from a screen edge into a "reveal" fraction
+/// (0…1, or past 1 for an elastic overpull), decides whether a released drag has
+/// come out far enough to stay put, and supplies the rubber-band resistance for
+/// dragging beyond full emergence.
 ///
 /// Deliberately free of any view state so the interaction math can be unit-tested
 /// without driving the SwiftUI layer.
@@ -26,6 +28,58 @@ enum EdgeDragReveal {
   /// out) rather than retract back into the edge.
   static func shouldCommit(reveal: CGFloat, threshold: CGFloat = 0.5) -> Bool {
     reveal >= threshold
+  }
+
+  // MARK: - Elastic overpull
+
+  /// Apple's rubber-band resistance constant. Higher is looser rubber, lower is
+  /// stiffer; 0.55 is the value `UIScrollView` uses.
+  static let rubberBandConstant: CGFloat = 0.55
+  /// Points of inward stretch the rubber band asymptotes toward. Because the
+  /// curve saturates, this is a genuine ceiling — pulling harder past it moves
+  /// the panel imperceptibly rather than unboundedly.
+  static let overpullDimension: CGFloat = 26
+
+  /// `UIScrollView`'s rubber-band curve: how far something actually moves when
+  /// dragged `distance` past its limit.
+  ///
+  ///     offset = (1 - 1 / (distance * c / dimension + 1)) * dimension
+  ///
+  /// A rational function, so it is monotonic, bounded by `dimension`, and never
+  /// reverses. Differentiating gives `f'(d) = c / (1 + dc/D)^2`, so the slope at
+  /// the boundary is exactly `c` — the panel leaves the limit at 55% of finger
+  /// speed and stiffens from there. (It is often described as starting at 1:1;
+  /// that is wrong, and the difference is the deliberate hint of resistance you
+  /// feel the moment you cross the limit.)
+  ///
+  /// The obvious alternatives are all worse: `sqrt` and `log` have no natural
+  /// ceiling (and `log` is undefined at 0), and a fractional power actually
+  /// *reverses* direction past some input, which shows up as a visible glitch.
+  static func rubberBand(
+    distance: CGFloat,
+    dimension: CGFloat,
+    c: CGFloat = rubberBandConstant
+  ) -> CGFloat {
+    guard distance > 0, dimension > 0 else { return 0 }
+    return (1 - (1 / ((distance * c / dimension) + 1))) * dimension
+  }
+
+  /// Reveal for a drag that may have carried past full emergence, in reveal units
+  /// (1 = one panel width). Up to `pullDistance` this is the plain linear
+  /// fraction; past it the excess is rubber-banded and returned as reveal > 1,
+  /// which the silhouette renders as the panel stretching inward while staying
+  /// glued to the edge — the membrane being pulled rather than a panel sliding
+  /// somewhere it shouldn't be.
+  static func elasticReveal(
+    inwardTranslation: CGFloat,
+    pullDistance: CGFloat,
+    panelWidth: CGFloat
+  ) -> CGFloat {
+    let base = revealFraction(inwardTranslation: inwardTranslation, pullDistance: pullDistance)
+    guard base >= 1, panelWidth > 0 else { return base }
+    let stretch = rubberBand(
+      distance: inwardTranslation - pullDistance, dimension: overpullDimension)
+    return 1 + stretch / panelWidth
   }
 }
 
@@ -168,14 +222,20 @@ struct CameraZoomSlider: View {
   /// Which screen edge the slider hugs — drives the corner morph and which side
   /// the value label sits on.
   var edge: HorizontalEdge
-  /// How far the panel has emerged from its edge, 0…1. The permanently-mounted
+  /// How far the panel has emerged from its edge. 0 is tucked away and 1 is
+  /// flush; past 1 is an elastic overpull that stretches it further inward
+  /// (`EdgeMorphGeometry.protrusion`). The permanently-mounted
   /// rulers leave this at 1 and animate themselves in with an offset; the
   /// temporary edge-pull ruler drives it from the drag so the panel grows out of
   /// the edge under the finger. See `EdgeMorphGeometry`.
   var reveal: CGFloat = 1
   var onChange: (CGFloat) -> Void
 
-  private let containerWidth: CGFloat = 48
+  /// Rest width of the panel — one full `reveal`. Exposed so the edge-pull drag
+  /// can express its rubber-banded stretch in the same reveal units.
+  static let panelWidth: CGFloat = 48
+
+  private let containerWidth = CameraZoomSlider.panelWidth
   private let containerHeight: CGFloat = 275
   /// Inset of the ruler's outer (edge-side) end from the container edge.
   private let outerInset: CGFloat = 10
@@ -233,6 +293,15 @@ struct CameraZoomSlider: View {
       .clipShape(tabShape)
     }
     .frame(width: containerWidth, height: containerHeight)
+    // Flatten before any parent opacity touches us. The panel is built from
+    // stacked *opaque* layers that rely on covering each other — the value
+    // label's black pill sits directly on top of the focused tick, which is the
+    // one tick drawn in the accent colour, and hides it. Without a compositing
+    // group a parent `.opacity()` fades each layer independently instead of the
+    // flattened result, so mid-fade the pill goes translucent and the accent tick
+    // bleeds through it as a horizontal line. Only visible now that the panel
+    // dismisses in place rather than sliding off-screen while it fades.
+    .compositingGroup()
     .contentShape(tabShape)
     .gesture(dragGesture)
     .onAppear { lastTickIndex = tickIndex(for: currentLog) }
@@ -517,32 +586,26 @@ struct HandednessSliderPreview: View {
   }
 
   var body: some View {
-    GeometryReader { geo in
+    // The GeometryReader no longer feeds any offset, but it still sets this
+    // view's layout — it is kept so the Settings row and the onboarding step size
+    // exactly as they did.
+    GeometryReader { _ in
       ZStack {
         slider(side: .leading)
           .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: leadingAlignment)
-          .animation(exitFade, value: edge)
-          .offset(x: edge == .leading ? 0 : -geo.size.width)
         slider(side: .trailing)
           .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: trailingAlignment)
-          .animation(exitFade, value: edge)
-          .offset(x: edge == .trailing ? 0 : geo.size.width)
       }
+      // Each side retracts into or grows out of its own edge in place. This
+      // replaces sliding both panels a full screen-width past the `.clipped()`
+      // boundary, which needed a separate faster opacity fade to hide the
+      // departing panel popping as it accelerated into the clip. With the
+      // silhouette doing the work there is no travel to hide.
+      .animation(.spring(response: 0.32, dampingFraction: 0.74), value: edge)
       .padding(.bottom, bottomInset)
     }
     .clipped()
   }
-
-  /// Each slider has only a short visible runway at its own edge before the
-  /// `.clipped()` boundary; the rest of the travel is off-screen. Under the slow
-  /// position ease the departing slider's visible window is the *start* of its
-  /// travel (accelerating into the clip — the abrupt pop) while the arriving one's
-  /// is the *end* (decelerating into place — already smooth). A fast opacity fade,
-  /// scoped here so it runs quicker than the offset animation, dissolves the
-  /// departing slider while it is still visible, yet completes long before the
-  /// arriving slider crosses into view — so the exit softens without dimming the
-  /// entrance.
-  private var exitFade: Animation { .easeOut(duration: 0.4) }
 
   private func slider(side: HorizontalEdge) -> some View {
     CameraZoomSlider(
@@ -550,6 +613,7 @@ struct HandednessSliderPreview: View {
       range: 0.5...10,
       keyFactors: [0.5, 1, 2],
       edge: side,
+      reveal: edge == side ? 1 : 0,
       onChange: { zoom = $0 }
     )
   }
@@ -600,8 +664,15 @@ enum EdgeMorphGeometry {
   static let heightTaper: CGFloat = 0.55
 
   /// How far the panel protrudes inward from the screen edge.
+  ///
+  /// Deliberately *not* clamped above 1: a reveal past full emergence is an
+  /// elastic overpull (see `EdgeDragReveal.elasticReveal`) and renders as the
+  /// panel stretching further inward while its edge side stays glued to the
+  /// screen, which is what makes the membrane read as elastic. Everything else
+  /// here clamps at 1, so an overpull stretches the panel without also distorting
+  /// its height or re-loosening its neck.
   static func protrusion(reveal: CGFloat, width: CGFloat) -> CGFloat {
-    width * clamped(reveal)
+    width * max(reveal, 0)
   }
 
   /// Height of the silhouette at this reveal, centred within the panel's frame.
@@ -782,7 +853,10 @@ private struct EdgeMorphTabOutline: Shape {
           Text(String(format: "reveal %.2f", reveal))
             .font(.caption.monospacedDigit())
             .foregroundStyle(.white)
-          Slider(value: $reveal, in: 0...1)
+          // Runs past 1 so the elastic overpull is scrubbable too — that range is
+          // only ever reached by dragging past the limit, and it's where the
+          // stretch either reads as a membrane or doesn't.
+          Slider(value: $reveal, in: 0...(1 + EdgeDragReveal.overpullDimension / CameraZoomSlider.panelWidth))
             .padding(.horizontal, 80)
             .padding(.bottom, 40)
         }
