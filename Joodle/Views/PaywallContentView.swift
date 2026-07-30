@@ -330,36 +330,32 @@ struct PaywallContentView: View {
   @State private var useProMode = true
   @State private var showRedeemCode = false
   @State private var showEarlyUpgrade = false
+  /// Non-nil once a purchase lands, flipping the whole surface to the
+  /// celebration. Every presenter's `onPurchaseComplete` dismisses or advances
+  /// immediately, so the celebration has to live here — inside the shared
+  /// paywall — rather than in each of them; the callback is deferred until the
+  /// user taps through it.
+  @State private var celebration: PurchaseCelebration?
+
+  /// What a completed purchase should celebrate. Recorded from the product that
+  /// was just bought rather than read back off the entitlement, which cannot
+  /// distinguish a fresh purchase from one restored moments earlier.
+  private enum PurchaseCelebration {
+    case subscription
+    case lifetime
+  }
 
   var body: some View {
-    VStack(spacing: 0) {
-      if case .onboarding = configuration.context {
-        // The slider inside the pricing section is the single purchase CTA.
-        // Skipping lives as a muted "Skip" in the navigation bar's trailing
-        // slot, so it sits on the same row as the back button rather than
-        // floating lower over the scroll content.
-        ScrollView {
-          VStack(spacing: 32) {
-            headerSection
-            contextBody
-          }
-          .frame(maxWidth: .infinity, alignment: .top)
-          .padding(.bottom, 40)
-        }
-        .toolbar {
-          ToolbarItem(placement: .topBarTrailing) {
-            onboardingSkipButton
-          }
-        }
+    Group {
+      if celebration != nil {
+        celebrationScreen
+          .transition(.opacity.combined(with: .scale(scale: 0.92)))
       } else {
-        ScrollView {
-          VStack(spacing: 32) {
-            headerSection
-            contextBody
-          }
-        }
+        paywall
+          .transition(.opacity)
       }
     }
+    .animation(.springFkingSatifying, value: celebration != nil)
     .alert(String(localized: "Purchase Failed"), isPresented: $showError) {
       Button(String(localized: "Contact Support")) {
         openSupportEmail()
@@ -404,6 +400,54 @@ struct PaywallContentView: View {
     .background(Color(uiColor: .systemBackground).ignoresSafeArea())
     .environment(\.colorScheme, .dark)
     .toolbarColorScheme(.dark, for: .navigationBar)
+  }
+
+  /// The selling surface. Unmounted wholesale once a purchase lands, which also
+  /// takes the onboarding "Skip" out of the toolbar — there is nothing left to
+  /// skip past at that point.
+  private var paywall: some View {
+    VStack(spacing: 0) {
+      if case .onboarding = configuration.context {
+        // The slider inside the pricing section is the single purchase CTA.
+        // Skipping lives as a muted "Skip" in the navigation bar's trailing
+        // slot, so it sits on the same row as the back button rather than
+        // floating lower over the scroll content.
+        ScrollView {
+          VStack(spacing: 32) {
+            headerSection
+            contextBody
+          }
+          .frame(maxWidth: .infinity, alignment: .top)
+          .padding(.bottom, 40)
+        }
+        .toolbar {
+          ToolbarItem(placement: .topBarTrailing) {
+            onboardingSkipButton
+          }
+        }
+      } else {
+        ScrollView {
+          VStack(spacing: 32) {
+            headerSection
+            contextBody
+          }
+        }
+      }
+    }
+  }
+
+  // MARK: - Celebration
+
+  /// Shown in place of the paywall once a purchase completes. The presenter's
+  /// `onPurchaseComplete` — which dismisses the sheet, or advances onboarding —
+  /// is held back until the user taps through, so this is what they see instead
+  /// of being dropped straight back where they started.
+  private var celebrationScreen: some View {
+    ProCelebrationView(
+      message: "Unlimited doodles, every widget, and every exclusive feature — thank you for backing Joodle!",
+      badge: celebration == .lifetime ? Text("Lifetime access") : nil,
+      onContinue: { configuration.onPurchaseComplete?() }
+    )
   }
 
   // MARK: - Header Section
@@ -912,11 +956,17 @@ struct PaywallContentView: View {
         let transaction = try await storeManager.purchase(product, paywallSource: configuration.paywallSource)
 
         if transaction != nil {
-          // Don't reset isPurchasing here - the view will be dismissed
-          // by onPurchaseComplete, and resetting would re-enable the slider
-          // before dismiss takes effect
+          // Refresh the entitlement BEFORE the celebration takes over. Presenters
+          // watch subscription state to decide whether their sheet should still
+          // be up — the limited-time-offer sheet dismisses itself the moment the
+          // offer stops being active, which is exactly what a purchase causes —
+          // so a stale `isSubscribed` here would tear the celebration back down.
+          await subscriptionManager.updateSubscriptionStatus()
+          // Don't reset isPurchasing here - the paywall is unmounted in favour of
+          // the celebration, and resetting would re-enable the slider underneath.
           await MainActor.run {
-            configuration.onPurchaseComplete?()
+            Haptic.play(with: .medium)
+            celebration = JoodleProducts.lifetimeIDs.contains(product.id) ? .lifetime : .subscription
           }
           return
         } else {

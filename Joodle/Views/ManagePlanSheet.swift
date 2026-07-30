@@ -21,8 +21,32 @@ struct ManagePlanSheet: View {
   @State private var showNativeManagement = false
   @State private var errorMessage: String?
   @State private var showError = false
+  /// Set when a purchase made here turned a non-Pro user Pro, flipping the sheet
+  /// to the celebration. This sheet doubles as "View All Plans" for users who
+  /// aren't subscribed yet, so it is a real acquisition surface — but a plain
+  /// plan switch by someone already Pro leaves this nil, since "You're Pro!"
+  /// would be telling them something they already know.
+  @State private var celebration: PurchaseCelebration?
+
+  private enum PurchaseCelebration {
+    case subscription
+    case lifetime
+  }
 
   var body: some View {
+    if let celebration {
+      ProCelebrationView(
+        message: "Unlimited doodles, every widget, and every exclusive feature — thank you for backing Joodle!",
+        badge: celebration == .lifetime ? Text("Lifetime access") : nil,
+        onContinue: { dismiss() }
+      )
+      .preferredColorScheme(.dark)
+    } else {
+      planSwitcher
+    }
+  }
+
+  private var planSwitcher: some View {
     NavigationStack {
       ScrollView {
         VStack(spacing: 20) {
@@ -288,6 +312,10 @@ struct ManagePlanSheet: View {
   // MARK: - Purchase Logic
 
   private func handlePlanSelection(_ product: Product) {
+    // Captured before the purchase: afterwards the entitlement says Pro either
+    // way, and only someone who wasn't Pro a moment ago has something to
+    // celebrate.
+    let wasSubscribed = subscriptionManager.isSubscribed
     isPurchasing = true
 
     Task {
@@ -295,10 +323,16 @@ struct ManagePlanSheet: View {
         let transaction = try await storeManager.purchase(product, paywallSource: "manage_plan")
 
         if transaction != nil {
-          // Purchase succeeded — dismiss the sheet
+          await subscriptionManager.updateSubscriptionStatus()
           await MainActor.run {
             isPurchasing = false
-            dismiss()
+            guard !wasSubscribed else {
+              // A plan switch — nothing to congratulate, just close.
+              dismiss()
+              return
+            }
+            Haptic.play(with: .medium)
+            celebration = JoodleProducts.lifetimeIDs.contains(product.id) ? .lifetime : .subscription
           }
         } else {
           // Transaction nil — user cancelled or pending
