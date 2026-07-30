@@ -142,6 +142,14 @@ struct FeatureTipCatalogueTests {
     #expect(finish.showsAfterOnboarding == true)
   }
 
+  /// A nudge re-shows a tip the user already retired, so the flag belongs only on
+  /// a hint they can genuinely get stuck without. Every other tip is a
+  /// suggestion, and bringing one back would read as nagging.
+  @Test func onlyTheCanvasFinishTipIsNudgeable() {
+    let nudgeable = FeatureTipDefinitions.all.filter(\.nudgeable).map(\.id)
+    #expect(nudgeable == [FeatureTipDefinitions.TipID.canvasFinish])
+  }
+
   /// The two pull-out wordings are one feature: whichever edge the user drags
   /// from, the other wording must never resurface.
   @Test func edgeZoomWordingsShareOneFeatureKey() {

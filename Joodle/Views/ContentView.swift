@@ -513,7 +513,14 @@ struct ContentView: View {
           // in-progress doodle to a stray touch is unrecoverable. The tap is
           // still absorbed by the container so it can't fall through to the
           // grid behind.
-          dismissOnTapOutside: false
+          dismissOnTapOutside: false,
+          // ...but a user who keeps tapping there is reaching for the dismissal
+          // that used to live on the backdrop, so point them at the checkmark
+          // that replaced it.
+          onBackdropTap: {
+            FeatureTipManager.shared.registerMissedTap(
+              nudging: FeatureTipDefinitions.TipID.canvasFinish)
+          }
         )
         .id("DynamicIslandExpandedView-\(dataProvider.selectedDateItem?.id ?? "none")")
       }

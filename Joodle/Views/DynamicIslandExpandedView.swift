@@ -112,6 +112,12 @@ struct DynamicIslandExpandedView<Content: View>: View {
   /// way the tap is still absorbed by the backdrop rather than falling through.
   let dismissOnTapOutside: Bool
 
+  /// Called for every tap on the backdrop outside the visible container,
+  /// independently of `dismissOnTapOutside` — so a host that has *disabled*
+  /// backdrop dismissal can still notice a user tapping there expecting it to
+  /// work. Taps over the container itself are absorbed before they reach here.
+  let onBackdropTap: (() -> Void)?
+
   /// Backdrop glass-start fraction — collapsed value rides the expand spring up
   /// to the theme-specific expanded value. All three live in `DIConfig`.
   private var glassTopFraction: CGFloat {
@@ -127,7 +133,8 @@ struct DynamicIslandExpandedView<Content: View>: View {
     hidden: Bool = false,
     onDismiss: (() -> Void)? = nil,
     tutorialAnchorID: String? = nil,
-    dismissOnTapOutside: Bool = true
+    dismissOnTapOutside: Bool = true,
+    onBackdropTap: (() -> Void)? = nil
   ) {
     self._isExpanded = isExpanded
     self.content = content()
@@ -135,6 +142,7 @@ struct DynamicIslandExpandedView<Content: View>: View {
     self.onDismiss = onDismiss
     self.tutorialAnchorID = tutorialAnchorID
     self.dismissOnTapOutside = dismissOnTapOutside
+    self.onBackdropTap = onBackdropTap
   }
 
   // MARK: - Layout adaptation
@@ -487,6 +495,7 @@ struct DynamicIslandExpandedView<Content: View>: View {
     .allowsHitTesting(isExpanded)
     .animation(isExpanded ? DIConfig.expandSpring : DIConfig.collapseSpring, value: isExpanded)
     .onTapGesture {
+      onBackdropTap?()
       // The tutorial drives canvas dismissal explicitly per step, so a stray
       // backdrop tap must not close the canvas — but the tap is still absorbed
       // here (no fall-through to the grid behind).

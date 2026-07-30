@@ -44,6 +44,13 @@ enum FeatureTipDefinitions {
         static let canvasFinish = "featureTip.canvasFinish"
     }
 
+    /// Tip identifiers callers need to name. Most tips are only ever reached
+    /// through their anchor, so they don't need one — these are the ones a call
+    /// site addresses directly (e.g. to nudge).
+    enum TipID {
+        static let canvasFinish = "featureTip.canvasFinish"
+    }
+
     /// Stable scope identifiers for `.scoped` tips. A scope is a whole screen
     /// whose visibility decides whether the tip is eligible (see
     /// `.featureTipScope(_:)`).
@@ -225,12 +232,18 @@ enum FeatureTipDefinitions {
         // it directly under the gesture band: while the reference-photo controls
         // are up the user is mid-adjustment, not hunting for the exit, so that
         // sequence runs first; everywhere else this outranks every other tip.
+        //
+        // `nudgeable`, so it comes back for a few seconds when someone taps the
+        // backdrop repeatedly — the exact gesture that used to close the canvas.
+        // That's the one hint worth repeating: a user who can't find the way out
+        // is stuck, whereas every other tip is only ever a suggestion.
         FeatureTip(
-            id: "featureTip.canvasFinish",
+            id: TipID.canvasFinish,
             anchorID: AnchorID.canvasFinish,
             featureKey: "canvasFinish",
             message: "Tap here to finish your doodle",
             priority: 10,
+            nudgeable: true,
             showsAfterOnboarding: true
         ),
         // Steps 5 and 6: the translation pad — scrubbing it, then re-centering.

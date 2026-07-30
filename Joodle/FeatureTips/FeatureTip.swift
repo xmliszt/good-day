@@ -77,6 +77,14 @@ struct FeatureTip: Identifiable {
     /// shows at a time.
     let priority: Int
 
+    /// When `true`, the tip can be re-surfaced after it's been seen — for a hint
+    /// the user may need again because they're visibly stuck (see
+    /// `FeatureTipManager.registerMissedTap(nudging:)`). Such an anchor also
+    /// keeps reporting its frame once
+    /// every tip is seen, since the manager otherwise short-circuits that hot
+    /// path and would have nothing to point the bubble at.
+    let nudgeable: Bool
+
     /// When `true`, the tip is only eligible while the user has premium access.
     /// Used for tips that surface a Pro-only feature, so free users never see a
     /// hint for something they can't use.
@@ -101,6 +109,7 @@ struct FeatureTip: Identifiable {
         horizontalTarget: FeatureTipHorizontalTarget = .center,
         targetInset: CGFloat = 0,
         priority: Int = 0,
+        nudgeable: Bool = false,
         requiresPremium: Bool = false,
         showsAfterOnboarding: Bool = false
     ) {
@@ -112,6 +121,7 @@ struct FeatureTip: Identifiable {
         self.horizontalTarget = horizontalTarget
         self.targetInset = targetInset
         self.priority = priority
+        self.nudgeable = nudgeable
         self.requiresPremium = requiresPremium
         self.showsAfterOnboarding = showsAfterOnboarding
     }

@@ -24,6 +24,9 @@
 //      current session (in-memory, see `sessionSuppressedIDs`), so they stay
 //      hidden the first time the user opens the app but surface from the second
 //      launch onward — for features the onboarding tutorial doesn't cover.
+//    • A tip flagged `nudgeable` can be put back on screen for a few seconds by
+//      `nudge(_:)` even once seen, for a user who is visibly stuck (see
+//      `registerMissedTap(nudging:)` and `MissedTapStreak`).
 //
 
 import SwiftUI
@@ -80,11 +83,34 @@ final class FeatureTipManager: ObservableObject {
     /// when the seen set changes, never on the hot path.
     private var hasUnseenTips: Bool
 
+    /// Anchors belonging to a `nudgeable` tip. They must keep reporting their
+    /// frame even once every tip is seen — otherwise the `hasUnseenTips`
+    /// short-circuit means a nudge has no frame to point at, and none is coming
+    /// (the anchor's `onAppear` already fired and was dropped). Computed once:
+    /// the catalogue is static.
+    private let nudgeableAnchorIDs: Set<String>
+
+    /// Tip currently forced on screen by `nudge(_:)`, exempt from the seen and
+    /// session-suppression checks. `nil` when no nudge is in flight.
+    private var nudgedTipID: String?
+
+    /// Bumped on every nudge so an expiry scheduled by an earlier one can't
+    /// retire a nudge that has since superseded it.
+    private var nudgeGeneration = 0
+
+    /// Backdrop-tap streak feeding `registerMissedTap(nudging:)`.
+    private var missedTaps = MissedTapStreak()
+
+    private var nudgedTip: FeatureTip? {
+        nudgedTipID.flatMap { id in FeatureTipDefinitions.all.first { $0.id == id } }
+    }
+
     private init() {
         let stored = defaults.stringArray(forKey: seenIDsKey) ?? []
         let seen = Set(stored)
         seenIDs = seen
         hasUnseenTips = FeatureTipDefinitions.all.contains { !seen.contains($0.id) }
+        nudgeableAnchorIDs = Set(FeatureTipDefinitions.all.filter(\.nudgeable).map(\.anchorID))
     }
 
     // MARK: - Anchor Registration
@@ -92,8 +118,10 @@ final class FeatureTipManager: ObservableObject {
     /// Called by `.featureTip(_:)` when the target appears or moves.
     func registerFrame(anchorID: String, frame: CGRect) {
         // Hot path (fires every frame while scrolling): bail before touching any
-        // state once there's nothing left that could ever show.
-        guard hasUnseenTips else { return }
+        // state once there's nothing left that could ever show. A nudgeable
+        // anchor is exempt — it can be asked to show again after being seen, so
+        // its frame has to stay current.
+        guard hasUnseenTips || nudgeableAnchorIDs.contains(anchorID) else { return }
         lastFrames[anchorID] = frame
         guard frames[anchorID] != frame else { return }
         frames[anchorID] = frame
@@ -104,6 +132,13 @@ final class FeatureTipManager: ObservableObject {
     func unregisterFrame(anchorID: String) {
         guard frames[anchorID] != nil else { return }
         frames.removeValue(forKey: anchorID)
+        if nudgeableAnchorIDs.contains(anchorID) {
+            // The target is gone — the canvas collapsed — so the question the
+            // nudge was answering has been answered one way or another. Drop it,
+            // and don't let a half-built tap streak carry into the next session.
+            missedTaps.reset()
+            if nudgedTip?.anchorID == anchorID { nudgedTipID = nil }
+        }
         recompute()
     }
 
@@ -164,6 +199,11 @@ final class FeatureTipManager: ObservableObject {
     /// later stage also retires the earlier guiding tips.
     func markSeen(_ id: String) {
         guard let tip = FeatureTipDefinitions.all.first(where: { $0.id == id }) else { return }
+        // Before the newly-seen guard below: a nudged tip is usually one that's
+        // already seen, so `newlySeen` is empty and an early return would leave
+        // the bubble up for the rest of the nudge — pointing at a button the user
+        // just pressed.
+        if nudgedTipID == id { clearNudge() }
         let groupIDs = FeatureTipDefinitions.all
             .filter { $0.featureKey == tip.featureKey }
             .map(\.id)
@@ -183,6 +223,53 @@ final class FeatureTipManager: ObservableObject {
     func markSeen(anchorID: String) {
         guard let active = activeTip, active.anchorID == anchorID else { return }
         markSeen(active.id)
+    }
+
+    // MARK: - Nudges
+
+    /// How long a nudged tip stays on screen. Long enough to read and act on,
+    /// short enough that it doesn't linger over the canvas afterwards.
+    private static let nudgeDurationSeconds: TimeInterval = 6
+
+    /// Records a tap that landed somewhere the user evidently expected to do
+    /// something and didn't, and nudges `tipID` once enough of them land in
+    /// quick succession. See `MissedTapStreak` for the threshold.
+    func registerMissedTap(nudging tipID: String) {
+        guard missedTaps.register() else { return }
+        nudge(tipID)
+    }
+
+    /// Put a `nudgeable` tip back on screen for a few seconds even if it has
+    /// already been seen — for a user who is visibly hunting for the control it
+    /// points at. Ignored for a tip that isn't flagged `nudgeable`, so a nudge
+    /// can never resurrect an arbitrary retired hint.
+    ///
+    /// Deliberately does NOT clear the tip's seen state: this is a one-off
+    /// reminder, not an un-retirement, so it goes away on its own whether or not
+    /// the user takes the hint.
+    private func nudge(_ tipID: String) {
+        guard let tip = FeatureTipDefinitions.all.first(where: { $0.id == tipID }),
+            tip.nudgeable
+        else { return }
+        nudgedTipID = tipID
+        nudgeGeneration += 1
+        let generation = nudgeGeneration
+        recompute()
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(Self.nudgeDurationSeconds))
+            guard generation == nudgeGeneration else { return }
+            clearNudge()
+        }
+    }
+
+    /// Drop the active nudge and any half-built tap streak — on expiry, and when
+    /// the user takes the hint. The target simply going away is handled by
+    /// `unregisterFrame(anchorID:)` instead.
+    private func clearNudge() {
+        missedTaps.reset()
+        guard nudgedTipID != nil else { return }
+        nudgedTipID = nil
+        recompute()
     }
 
     /// Suppress every currently-defined tip. Call once on the user's first
@@ -210,8 +297,13 @@ final class FeatureTipManager: ObservableObject {
 
     /// Whether a tip is currently eligible to display, per its behavior.
     private func isEligible(_ tip: FeatureTip) -> Bool {
-        guard !seenIDs.contains(tip.id) else { return false }
-        guard !sessionSuppressedIDs.contains(tip.id) else { return false }
+        // An active nudge overrides both dismissal paths — that's the whole point
+        // of it — but never the behavior check below: with no anchor on screen
+        // there's nothing to point at.
+        if tip.id != nudgedTipID {
+            guard !seenIDs.contains(tip.id) else { return false }
+            guard !sessionSuppressedIDs.contains(tip.id) else { return false }
+        }
         if tip.requiresPremium, !SubscriptionManager.shared.hasPremiumAccess { return false }
         switch tip.behavior {
         case .anchorVisible:
@@ -230,9 +322,11 @@ final class FeatureTipManager: ObservableObject {
 
     /// Pick the highest-priority eligible tip and publish its position.
     private func recompute() {
-        let candidate = FeatureTipDefinitions.all
-            .filter(isEligible)
-            .max { $0.priority < $1.priority }
+        let eligible = FeatureTipDefinitions.all.filter(isEligible)
+        // A nudge answers a question the user is asking right now, so it jumps
+        // the queue rather than waiting its turn on priority.
+        let candidate = eligible.first { $0.id == nudgedTipID }
+            ?? eligible.max { $0.priority < $1.priority }
 
         let newFrame = candidate.flatMap { frames[$0.anchorID] }
         let newEdge = candidate.map(edge) ?? .bottom
@@ -269,6 +363,8 @@ final class FeatureTipManager: ObservableObject {
     func resetSeenState() {
         seenIDs.removeAll()
         sessionSuppressedIDs.removeAll()
+        nudgedTipID = nil
+        missedTaps.reset()
         refreshHasUnseenTips()
         persistSeenIDs()
         recompute()
