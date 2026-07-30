@@ -196,6 +196,8 @@ class StoreKitManager: NSObject, ObservableObject {
             return String(localized: "Not entitled to access these products.")
         case .unsupported:
             return String(localized: "This device is not capable of making payments.")
+        case .invalidPresentationContext:
+            return String(localized: "The purchase couldn't be presented. Try again from the paywall.")
         @unknown default:
             return String(localized: "Unexpected StoreKit error: \(error.localizedDescription)")
         }
