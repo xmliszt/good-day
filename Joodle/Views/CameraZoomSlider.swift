@@ -329,6 +329,10 @@ struct CameraZoomSlider: View {
       .overlay(
         EdgeMorphTabOutline(edge: edge, flareHeight: flareHeight, reveal: reveal)
           .stroke(Color.white.opacity(0.2), lineWidth: 1)
+          // Tied to the protrusion so a retracted panel leaves nothing behind —
+          // the fill vanishes by itself, but the stroke would not. See
+          // `EdgeMorphGeometry.outlineOpacity`.
+          .opacity(EdgeMorphGeometry.outlineOpacity(reveal: reveal, width: containerWidth))
       )
   }
 
@@ -692,6 +696,26 @@ enum EdgeMorphGeometry {
   /// Bézier tangent fraction for the flare at this reveal.
   static func flareHandle(reveal: CGFloat) -> CGFloat {
     baseFlareHandle + flareHandleCling * (1 - clamped(reveal))
+  }
+
+  /// Protrusion at which the outline reaches full strength.
+  static let minimumOutlinedProtrusion: CGFloat = 2
+
+  /// Opacity multiplier for the panel's outline.
+  ///
+  /// A retracted panel has a zero-area silhouette, so its *fill* disappears on its
+  /// own — but the contour degenerates to a vertical line sitting exactly on the
+  /// screen edge, and stroking a degenerate path still draws. The result was a
+  /// ~0.5pt hairline left glowing on the edge after the panel had otherwise gone.
+  /// The same thing happens just above zero, where the panel is thinner than the
+  /// 1pt stroke and the outline stops describing a shape at all.
+  ///
+  /// Tying the stroke to the protrusion kills both: it is gone at rest and fades
+  /// up across the first couple of points, so there is no pop either.
+  static func outlineOpacity(reveal: CGFloat, width: CGFloat) -> CGFloat {
+    let protruded = protrusion(reveal: reveal, width: width)
+    guard protruded > 0, minimumOutlinedProtrusion > 0 else { return 0 }
+    return min(protruded / minimumOutlinedProtrusion, 1)
   }
 
   private static func clamped(_ reveal: CGFloat) -> CGFloat {

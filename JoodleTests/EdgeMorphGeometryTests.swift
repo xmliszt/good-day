@@ -61,6 +61,45 @@ struct EdgeMorphGeometryTests {
       - EdgeMorphGeometry.flareHandle(reveal: 1)) < 0.0001)
   }
 
+  // MARK: - outlineOpacity
+
+  /// The bug this guards: a retracted panel has a zero-area fill, but its contour
+  /// degenerates onto the screen edge and a stroked degenerate path still draws,
+  /// leaving a hairline behind after the panel had visibly gone.
+  @Test func outlineIsFullyInvisibleWhenRetracted() {
+    #expect(EdgeMorphGeometry.outlineOpacity(reveal: 0, width: width) == 0)
+    #expect(EdgeMorphGeometry.outlineOpacity(reveal: -0.2, width: width) == 0)
+  }
+
+  @Test func outlineIsAtFullStrengthOnceOut() {
+    #expect(EdgeMorphGeometry.outlineOpacity(reveal: 1, width: width) == 1)
+    #expect(EdgeMorphGeometry.outlineOpacity(reveal: 0.5, width: width) == 1)
+  }
+
+  /// Below the stroke's own width the outline stops describing a shape, so it has
+  /// to be partial rather than a 1pt line on a sub-point panel.
+  @Test func outlineFadesUpAcrossTheFirstFewPoints() {
+    let atHalfPoint = EdgeMorphGeometry.outlineOpacity(
+      reveal: 0.5 / width, width: width)  // 0.5pt protrusion
+    #expect(atHalfPoint > 0)
+    #expect(atHalfPoint < 1)
+    let atOnePoint = EdgeMorphGeometry.outlineOpacity(reveal: 1 / width, width: width)
+    #expect(atOnePoint > atHalfPoint)
+  }
+
+  @Test func outlineOpacityIsMonotonic() {
+    var previous: CGFloat = -1
+    for reveal in stride(from: CGFloat(0), through: 1, by: 0.01) {
+      let opacity = EdgeMorphGeometry.outlineOpacity(reveal: reveal, width: width)
+      #expect(opacity >= previous)
+      previous = opacity
+    }
+  }
+
+  @Test func outlineOpacityIsZeroForADegeneratePanel() {
+    #expect(EdgeMorphGeometry.outlineOpacity(reveal: 1, width: 0) == 0)
+  }
+
   // MARK: - visibleHeight
 
   @Test func visibleHeightIsTheFullFrameWhenFullyOut() {
