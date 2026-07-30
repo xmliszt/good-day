@@ -29,11 +29,66 @@ enum EdgeDragReveal {
   }
 }
 
-/// Bridges a `UIScreenEdgePanGestureRecognizer` into SwiftUI so an inward drag
-/// starting at a specific screen edge is reliably recognized (JOO-147). A pure
-/// SwiftUI `DragGesture` on an edge strip loses the extreme-edge touch-down to
-/// the system's own screen-edge pan, so the ruler never emerges; the dedicated
-/// recognizer is the platform's own tool for exactly this and claims the touch.
+/// A pan recognizer that claims its touch on touch-*down* and reports movement
+/// from the first pixel.
+///
+/// `UIScreenEdgePanGestureRecognizer` — the obvious fit, and what this replaced —
+/// withholds `.began` until it is satisfied the drag is a genuine inward edge
+/// pan. That deliberation is invisible but not free: the control it drives stays
+/// frozen against the edge for the first stretch of the drag and then jumps to
+/// the translation accumulated during recognition, which reads as the panel not
+/// responding rather than being dragged. Owning the touch from the start trades
+/// that away — there is no threshold, so the panel tracks the finger from the
+/// instant it starts leaving the edge.
+///
+/// The recognizer takes no view of *where* the touch landed: it is mounted on a
+/// narrow strip already parked at the edge, so hosting is what scopes it.
+final class ImmediateEdgePanRecognizer: UIGestureRecognizer {
+  /// Signed horizontal travel since touch-down, in the recognizer's view space.
+  private(set) var translationX: CGFloat = 0
+  private var startX: CGFloat = 0
+
+  override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
+    super.touchesBegan(touches, with: event)
+    guard let touch = touches.first, let view else {
+      state = .failed
+      return
+    }
+    startX = touch.location(in: view).x
+    translationX = 0
+    // Begin immediately — this is the whole point of the subclass.
+    state = .began
+  }
+
+  override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) {
+    super.touchesMoved(touches, with: event)
+    guard let touch = touches.first, let view else { return }
+    translationX = touch.location(in: view).x - startX
+    state = .changed
+  }
+
+  override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) {
+    super.touchesEnded(touches, with: event)
+    state = .ended
+  }
+
+  override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) {
+    super.touchesCancelled(touches, with: event)
+    state = .cancelled
+  }
+
+  override func reset() {
+    super.reset()
+    startX = 0
+    translationX = 0
+  }
+}
+
+/// Bridges `ImmediateEdgePanRecognizer` into SwiftUI so an inward drag starting
+/// at a screen edge is tracked from the first pixel (JOO-147). A pure SwiftUI
+/// `DragGesture` on an edge strip loses the extreme-edge touch-down to the
+/// system's own screen-edge pan, so the ruler never emerges; a UIKit recognizer
+/// mounted on the strip claims the touch instead.
 ///
 /// `onChanged` reports the inward translation in points (clamped ≥ 0, positive
 /// toward screen center); `onEnded` fires once on release/cancel with the final
@@ -50,11 +105,10 @@ struct ScreenEdgePanCatcher: UIViewRepresentable {
   func makeUIView(context: Context) -> UIView {
     let view = UIView()
     view.backgroundColor = .clear
-    let recognizer = UIScreenEdgePanGestureRecognizer(
+    let recognizer = ImmediateEdgePanRecognizer(
       target: context.coordinator,
       action: #selector(Coordinator.handlePan(_:))
     )
-    recognizer.edges = edge == .leading ? .left : .right
     view.addGestureRecognizer(recognizer)
     return view
   }
@@ -65,11 +119,6 @@ struct ScreenEdgePanCatcher: UIViewRepresentable {
     context.coordinator.edge = edge
     context.coordinator.onChanged = onChanged
     context.coordinator.onEnded = onEnded
-    for recognizer in uiView.gestureRecognizers ?? [] {
-      if let edgeRecognizer = recognizer as? UIScreenEdgePanGestureRecognizer {
-        edgeRecognizer.edges = edge == .leading ? .left : .right
-      }
-    }
   }
 
   final class Coordinator: NSObject {
@@ -87,12 +136,10 @@ struct ScreenEdgePanCatcher: UIViewRepresentable {
       self.onEnded = onEnded
     }
 
-    @objc func handlePan(_ recognizer: UIScreenEdgePanGestureRecognizer) {
-      guard let view = recognizer.view else { return }
-      let translationX = recognizer.translation(in: view).x
+    @objc func handlePan(_ recognizer: ImmediateEdgePanRecognizer) {
       // Inward is toward screen center: rightward for a left edge, leftward for
       // a right edge. Clamp so dragging back past the edge never goes negative.
-      let inward = edge == .leading ? translationX : -translationX
+      let inward = edge == .leading ? recognizer.translationX : -recognizer.translationX
       let clamped = max(inward, 0)
       switch recognizer.state {
       case .began, .changed:
@@ -121,6 +168,11 @@ struct CameraZoomSlider: View {
   /// Which screen edge the slider hugs — drives the corner morph and which side
   /// the value label sits on.
   var edge: HorizontalEdge
+  /// How far the panel has emerged from its edge, 0…1. The permanently-mounted
+  /// rulers leave this at 1 and animate themselves in with an offset; the
+  /// temporary edge-pull ruler drives it from the drag so the panel grows out of
+  /// the edge under the finger. See `EdgeMorphGeometry`.
+  var reveal: CGFloat = 1
   var onChange: (CGFloat) -> Void
 
   private let containerWidth: CGFloat = 48
@@ -169,9 +221,16 @@ struct CameraZoomSlider: View {
   var body: some View {
     ZStack {
       container
-      ruler
-        .clipShape(tabShape)
-      valueLabel
+      // The ruler and the value label ride out with the silhouette: they slide
+      // from behind the edge as `reveal` grows, clipped by the same emerging
+      // outline. Sliding the contents rather than the whole panel is what lets
+      // the panel's own shape stay anchored to the edge and re-form there.
+      ZStack {
+        ruler
+        valueLabel
+      }
+      .offset(x: contentSlide)
+      .clipShape(tabShape)
     }
     .frame(width: containerWidth, height: containerHeight)
     .contentShape(tabShape)
@@ -182,16 +241,24 @@ struct CameraZoomSlider: View {
   // MARK: - Container
 
   private var tabShape: EdgeMorphTab {
-    EdgeMorphTab(edge: edge, flareHeight: flareHeight)
+    EdgeMorphTab(edge: edge, flareHeight: flareHeight, reveal: reveal)
+  }
+
+  /// How far the panel's contents sit back toward the edge while it is still
+  /// emerging — a full panel-width at reveal 0, nothing at 1.
+  private var contentSlide: CGFloat {
+    let hidden = containerWidth * (1 - min(max(reveal, 0), 1))
+    return edge == .trailing ? hidden : -hidden
   }
 
   private var container: some View {
     // Pure, opaque black — no glass or translucency — flush against the screen
     // edge with concave corners morphing into it, with a hairline white outline.
+    // The outline is stroked outside any clip so its full line width shows.
     tabShape
       .fill(Color.black)
       .overlay(
-        EdgeMorphTabOutline(edge: edge, flareHeight: flareHeight)
+        EdgeMorphTabOutline(edge: edge, flareHeight: flareHeight, reveal: reveal)
           .stroke(Color.white.opacity(0.2), lineWidth: 1)
       )
   }
@@ -488,27 +555,123 @@ struct HandednessSliderPreview: View {
   }
 }
 
+/// Pure geometry for the edge panel's silhouette at a given emergence `reveal`
+/// (0 = fully back in the edge, 1 = fully out).
+///
+/// The point of parameterising on `reveal` is that a panel part-way out has to be
+/// a *different shape*, not a clipped one. Translating a fixed silhouette off
+/// screen leaves its flare's screen-edge join out of frame, so what remains
+/// visible is a vertical slice through the middle of the curve — meeting the edge
+/// at an angle, with a hard corner on each side. Recomputing the flare so it
+/// always completes inside the current protrusion keeps the contour tangent to
+/// the edge at every reveal, and there is no corner to see.
+///
+/// Above that baseline the two clings shape *how* it emerges. A liquid bead
+/// pulled off a surface holds a wide, lazy neck while it is barely out and only
+/// tightens as it commits, so the flare span and the Bézier tangents both start
+/// long and relax toward their designed values. That is what reads as surface
+/// tension — a real metaball field would need a shader (see
+/// `Joodle/Shaders/Metaball.metal`), but for one bead on a straight edge a
+/// silhouette with matched tangents is indistinguishable and effectively free.
+///
+/// Free functions, so the curve maths is directly unit-testable.
+enum EdgeMorphGeometry {
+  /// Fraction of the flare's vertical span each Bézier tangent runs at full
+  /// emergence. Larger keeps the ends straighter and sweeps harder through the
+  /// middle; past 0.5 the two tangents overlap and the curve gains the slight
+  /// pinch that makes the join read as liquid rather than as a fillet.
+  static let baseFlareHandle: CGFloat = 0.62
+  /// How much longer the flare's vertical span runs at zero reveal. 0.8 means a
+  /// barely-emerged panel spreads its neck 1.8x as far along the edge as a fully
+  /// out one — the wide-footed meniscus of a bead that hasn't let go yet.
+  static let flareSpanCling: CGFloat = 0.8
+  /// Extra tangent length at zero reveal, on top of `baseFlareHandle`. Holds the
+  /// contour parallel to the edge for longer on the way out, deepening the pinch.
+  static let flareHandleCling: CGFloat = 0.15
+  /// Fraction of the panel's height withheld at zero reveal.
+  ///
+  /// Without this the panel emerges at full height — a ridge running the whole
+  /// edge, which is smooth but doesn't read as a bead. Letting the height grow
+  /// with the protrusion means a barely-pulled panel is a short bulge near the
+  /// vertical centre that lengthens as it commits. It also makes the flare cap
+  /// below do useful work: against a short height the two flares consume nearly
+  /// all of it, leaving a lens with no straight face at all, which is the shape
+  /// a droplet actually has. Set to 0 for the constant-height ridge.
+  static let heightTaper: CGFloat = 0.55
+
+  /// How far the panel protrudes inward from the screen edge.
+  static func protrusion(reveal: CGFloat, width: CGFloat) -> CGFloat {
+    width * clamped(reveal)
+  }
+
+  /// Height of the silhouette at this reveal, centred within the panel's frame.
+  static func visibleHeight(reveal: CGFloat, height: CGFloat) -> CGFloat {
+    height * (1 - heightTaper * (1 - clamped(reveal)))
+  }
+
+  /// Vertical span of each flare. `height` is the *visible* height, not the
+  /// panel's frame. Capped just shy of half of it so the top and bottom flares
+  /// always leave a sliver of straight inner edge between them rather than
+  /// crossing — and, at low reveal, so they meet as a lens.
+  static func flareSpan(reveal: CGFloat, flareHeight: CGFloat, height: CGFloat) -> CGFloat {
+    let clung = flareHeight * (1 + flareSpanCling * (1 - clamped(reveal)))
+    return min(clung, max(height / 2 - 1, 0))
+  }
+
+  /// Bézier tangent fraction for the flare at this reveal.
+  static func flareHandle(reveal: CGFloat) -> CGFloat {
+    baseFlareHandle + flareHandleCling * (1 - clamped(reveal))
+  }
+
+  private static func clamped(_ reveal: CGFloat) -> CGFloat {
+    min(max(reveal, 0), 1)
+  }
+}
+
 /// A panel that hugs one screen edge: a straight inner edge that sweeps out to the
 /// screen edge through a tall ogee (S-curve) at top and bottom, so the panel morphs
 /// into the edge over one continuous smooth curve with no corners. The ogee is
 /// vertical where it leaves the inner edge and vertical again where it meets the
 /// screen edge, so both joins are tangent-smooth.
+///
+/// `reveal` drives the emergence — see `EdgeMorphGeometry`. At 1 this is the
+/// full-width tab; below that the inner edge sits proportionally closer to the
+/// screen edge and the flares re-form to fit, so the panel grows out of the edge
+/// like a bead instead of sliding out from behind it.
 private struct EdgeMorphTab: Shape {
   var edge: HorizontalEdge
   var flareHeight: CGFloat
+  var reveal: CGFloat = 1
+
+  /// Lets the release animation interpolate the silhouette itself; a Shape's
+  /// stored properties are otherwise snapped, not tweened.
+  var animatableData: CGFloat {
+    get { reveal }
+    set { reveal = newValue }
+  }
 
   func path(in rect: CGRect) -> Path {
     let w = rect.width
     let h = rect.height
-    let ky = min(flareHeight, h / 2 - 1)   // vertical span of each ogee
+    // Built for a trailing (right) edge: screen edge at x == w, inner edge here.
+    let innerX = w - EdgeMorphGeometry.protrusion(reveal: reveal, width: w)
+    // The silhouette occupies a vertically centred band of the frame, growing to
+    // the full height as it emerges.
+    let visibleHeight = EdgeMorphGeometry.visibleHeight(reveal: reveal, height: h)
+    let top = (h - visibleHeight) / 2
+    let bottom = top + visibleHeight
+    let ky = EdgeMorphGeometry.flareSpan(
+      reveal: reveal, flareHeight: flareHeight, height: visibleHeight)
+    let handle = EdgeMorphGeometry.flareHandle(reveal: reveal)
 
-    // Built for a trailing (right) edge: screen edge at x == w, inner edge at x == 0.
     var path = Path()
-    path.move(to: CGPoint(x: 0, y: ky))
-    EdgeMorphFlare.ogee(&path, from: CGPoint(x: 0, y: ky), to: CGPoint(x: w, y: 0))    // inner → edge
-    path.addLine(to: CGPoint(x: w, y: h))                                              // flush along the edge
-    EdgeMorphFlare.ogee(&path, from: CGPoint(x: w, y: h), to: CGPoint(x: 0, y: h - ky)) // edge → inner
-    path.addLine(to: CGPoint(x: 0, y: ky))                                             // straight inner edge
+    path.move(to: CGPoint(x: innerX, y: top + ky))
+    EdgeMorphFlare.ogee(
+      &path, from: CGPoint(x: innerX, y: top + ky), to: CGPoint(x: w, y: top), handle: handle)
+    path.addLine(to: CGPoint(x: w, y: bottom))                                        // flush along the edge
+    EdgeMorphFlare.ogee(
+      &path, from: CGPoint(x: w, y: bottom), to: CGPoint(x: innerX, y: bottom - ky), handle: handle)
+    path.addLine(to: CGPoint(x: innerX, y: top + ky))                                 // straight inner edge
     path.closeSubpath()
 
     if edge == .leading {
@@ -525,11 +688,9 @@ private struct EdgeMorphTab: Shape {
 /// S-curve. `handle` is the fraction of the vertical span each tangent runs:
 /// larger keeps the ends straighter and sweeps harder through the middle.
 private enum EdgeMorphFlare {
-  static let handle: CGFloat = 0.62
-
   /// Connects an inner-edge point to a screen-edge point with vertical tangents at
   /// both ends. `from` must be the current path point.
-  static func ogee(_ path: inout Path, from: CGPoint, to: CGPoint) {
+  static func ogee(_ path: inout Path, from: CGPoint, to: CGPoint, handle: CGFloat) {
     let l = abs(from.y - to.y) * handle
     let dir: CGFloat = to.y < from.y ? -1 : 1
     path.addCurve(
@@ -546,25 +707,90 @@ private enum EdgeMorphFlare {
 private struct EdgeMorphTabOutline: Shape {
   var edge: HorizontalEdge
   var flareHeight: CGFloat
+  var reveal: CGFloat = 1
+
+  var animatableData: CGFloat {
+    get { reveal }
+    set { reveal = newValue }
+  }
 
   func path(in rect: CGRect) -> Path {
     let w = rect.width
     let h = rect.height
-    let ky = min(flareHeight, h / 2 - 1)
+    let innerX = w - EdgeMorphGeometry.protrusion(reveal: reveal, width: w)
+    let visibleHeight = EdgeMorphGeometry.visibleHeight(reveal: reveal, height: h)
+    let top = (h - visibleHeight) / 2
+    let bottom = top + visibleHeight
+    let ky = EdgeMorphGeometry.flareSpan(
+      reveal: reveal, flareHeight: flareHeight, height: visibleHeight)
+    let handle = EdgeMorphGeometry.flareHandle(reveal: reveal)
 
     // Traced from the bottom edge point around the inner contour to the top edge
-    // point, so the (w, h) → (w, 0) edge segment is never drawn.
+    // point, so the segment running along the screen edge is never drawn.
     var path = Path()
-    path.move(to: CGPoint(x: w, y: h))
-    EdgeMorphFlare.ogee(&path, from: CGPoint(x: w, y: h), to: CGPoint(x: 0, y: h - ky)) // edge → inner
-    path.addLine(to: CGPoint(x: 0, y: ky))                                             // straight inner edge
-    EdgeMorphFlare.ogee(&path, from: CGPoint(x: 0, y: ky), to: CGPoint(x: w, y: 0))    // inner → edge
+    path.move(to: CGPoint(x: w, y: bottom))
+    EdgeMorphFlare.ogee(
+      &path, from: CGPoint(x: w, y: bottom), to: CGPoint(x: innerX, y: bottom - ky), handle: handle)
+    path.addLine(to: CGPoint(x: innerX, y: top + ky))                                 // straight inner edge
+    EdgeMorphFlare.ogee(
+      &path, from: CGPoint(x: innerX, y: top + ky), to: CGPoint(x: w, y: top), handle: handle)
 
     if edge == .leading {
       return path.applying(CGAffineTransform(scaleX: -1, y: 1).translatedBy(x: -w, y: 0))
     }
     return path
   }
+}
+
+/// Scrub the emergence to tune `EdgeMorphGeometry`. The whole point is the
+/// in-between states: check that the contour stays tangent to the screen edge at
+/// every reveal (no corner where it meets the edge) and that the neck reads as
+/// liquid letting go rather than a panel sliding out.
+#Preview("Edge morph emergence") {
+  struct PreviewHost: View {
+    @State private var reveal: CGFloat = 0.5
+    @State private var zoom: CGFloat = 1.0
+
+    var body: some View {
+      ZStack {
+        LinearGradient(
+          colors: [.gray, .black],
+          startPoint: .topLeading,
+          endPoint: .bottomTrailing
+        )
+        HStack {
+          CameraZoomSlider(
+            zoomFactor: zoom,
+            range: 0.5...10,
+            keyFactors: [0.5, 1, 2],
+            edge: .leading,
+            reveal: reveal,
+            onChange: { zoom = $0 }
+          )
+          Spacer()
+          CameraZoomSlider(
+            zoomFactor: zoom,
+            range: 0.5...10,
+            keyFactors: [0.5, 1, 2],
+            edge: .trailing,
+            reveal: reveal,
+            onChange: { zoom = $0 }
+          )
+        }
+        VStack {
+          Spacer()
+          Text(String(format: "reveal %.2f", reveal))
+            .font(.caption.monospacedDigit())
+            .foregroundStyle(.white)
+          Slider(value: $reveal, in: 0...1)
+            .padding(.horizontal, 80)
+            .padding(.bottom, 40)
+        }
+      }
+      .ignoresSafeArea()
+    }
+  }
+  return PreviewHost()
 }
 
 #Preview {

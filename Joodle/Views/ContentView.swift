@@ -255,8 +255,6 @@ struct ContentView: View {
   ) -> some View {
     let isShowing = context != .inactive
     let tempEdge: HorizontalEdge = defaultEdge == .trailing ? .leading : .trailing
-    // Same off-edge hide distance the default ruler uses to tuck fully away.
-    let hiddenOffset: CGFloat = tempEdge == .trailing ? 140 : -140
     // Inward drag distance (points) for the ruler to fully emerge.
     let pullDistance: CGFloat = 120
     // Feature tip that teaches this pull. Its copy names the edge to drag from,
@@ -267,9 +265,10 @@ struct ContentView: View {
       : FeatureTipDefinitions.AnchorID.photoEdgeZoomTrailing
 
     Group {
-      // The temporary ruler. Its horizontal offset interpolates from fully
-      // hidden (reveal 0) to flush against the edge (reveal 1), so it tracks
-      // the pull out of the edge in real time.
+      // The temporary ruler. It stays parked at the edge and `reveal` grows its
+      // silhouette out of it, so the panel forms under the finger rather than
+      // sliding in from off-screen — see `EdgeMorphGeometry` for why a part-way
+      // panel has to be reshaped rather than translated.
       HStack(spacing: 0) {
         if tempEdge == .leading {
           CameraZoomSlider(
@@ -277,6 +276,7 @@ struct ContentView: View {
             range: range,
             keyFactors: keyFactors,
             edge: .leading,
+            reveal: tempZoomReveal,
             onChange: onChange
           )
         }
@@ -287,6 +287,7 @@ struct ContentView: View {
             range: range,
             keyFactors: keyFactors,
             edge: .trailing,
+            reveal: tempZoomReveal,
             onChange: onChange
           )
         }
@@ -295,18 +296,18 @@ struct ContentView: View {
       .padding(.bottom, 80)
       .ignoresSafeArea()
       .opacity(isShowing && tempZoomReveal > 0.001 ? 1 : 0)
-      .offset(x: hiddenOffset * (1 - tempZoomReveal))
       // The emerged ruler owns its own zoom drag only once committed; until
       // then the grab strip below is what tracks the pull, so the reveal
       // gesture and the ruler's zoom gesture never fight.
       .allowsHitTesting(isShowing && tempZoomCommitted)
 
-      // Invisible edge grab band on the non-default edge, hosting a
-      // UIScreenEdgePanGestureRecognizer — the platform's own tool for an
-      // inward drag that starts at the very screen edge (a pure SwiftUI
-      // DragGesture there loses the touch-down to the system's edge pan). The
-      // band is parked at the edge by the outer frame and only intercepts while
-      // uncommitted, so the emerged ruler takes over its own zoom drag after.
+      // Invisible edge grab band on the non-default edge, hosting a UIKit
+      // recognizer that claims the touch on touch-down (a pure SwiftUI
+      // DragGesture at the very edge loses it to the system's edge pan, and a
+      // UIScreenEdgePanGestureRecognizer withholds `.began` long enough that the
+      // panel visibly lags the finger). The band is parked at the edge by the
+      // outer frame and only intercepts while uncommitted, so the emerged ruler
+      // takes over its own zoom drag after.
       ScreenEdgePanCatcher(
         edge: tempEdge,
         onChanged: { inward in
