@@ -6,6 +6,7 @@
 //  App Store builds (or while simulating production).
 //
 
+import SwiftData
 import SwiftUI
 
 struct DeveloperOptionsView: View {

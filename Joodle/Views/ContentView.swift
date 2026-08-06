@@ -85,7 +85,7 @@ struct ContentView: View {
 
   /// Temporary edge-drag zoom control (JOO-147). When the user drags inward from
   /// the screen edge *opposite* their handedness preference, a second, identical
-  /// zoom ruler is pulled out of that edge. `tempZoomReveal` (0…1) tracks how far
+  /// zoom ruler is pulled out of that edge. `tempZoomReveal` tracks how far
   /// it has emerged — set live from the drag so it follows the finger — and
   /// `tempZoomCommitted` records whether a released drag came out far enough to
   /// stay. Both are in-the-moment view state only; they never touch the
@@ -227,7 +227,7 @@ struct ContentView: View {
 
   /// Temporary edge-drag zoom control (JOO-147). Rendered on the edge *opposite*
   /// the user's handedness preference. A thin invisible grab strip on that edge
-  /// tracks an inward drag into `tempZoomReveal` (0…1), which slides a second,
+  /// tracks an inward drag into `tempZoomReveal`, which grows a second,
   /// identical zoom ruler out of the edge in real time; releasing past the
   /// halfway point commits it (it stays out and takes over its own zoom drag),
   /// otherwise it retracts. Both rulers drive the same live zoom and the
@@ -255,15 +255,20 @@ struct ContentView: View {
   ) -> some View {
     let isShowing = context != .inactive
     let tempEdge: HorizontalEdge = defaultEdge == .trailing ? .leading : .trailing
-    // Same off-edge hide distance the default ruler uses to tuck fully away.
-    let hiddenOffset: CGFloat = tempEdge == .trailing ? 140 : -140
     // Inward drag distance (points) for the ruler to fully emerge.
     let pullDistance: CGFloat = 120
+    // Feature tip that teaches this pull. Its copy names the edge to drag from,
+    // so there's one anchor per edge and only the live one is registered. Scoped
+    // to the reference-photo pass: live camera has its own single zoom tip.
+    let tipAnchorID = tempEdge == .leading
+      ? FeatureTipDefinitions.AnchorID.photoEdgeZoomLeading
+      : FeatureTipDefinitions.AnchorID.photoEdgeZoomTrailing
 
     Group {
-      // The temporary ruler. Its horizontal offset interpolates from fully
-      // hidden (reveal 0) to flush against the edge (reveal 1), so it tracks
-      // the pull out of the edge in real time.
+      // The temporary ruler. It stays parked at the edge and `reveal` grows its
+      // silhouette out of it, so the panel forms under the finger rather than
+      // sliding in from off-screen — see `EdgeMorphGeometry` for why a part-way
+      // panel has to be reshaped rather than translated.
       HStack(spacing: 0) {
         if tempEdge == .leading {
           CameraZoomSlider(
@@ -271,6 +276,7 @@ struct ContentView: View {
             range: range,
             keyFactors: keyFactors,
             edge: .leading,
+            reveal: tempZoomReveal,
             onChange: onChange
           )
         }
@@ -281,6 +287,7 @@ struct ContentView: View {
             range: range,
             keyFactors: keyFactors,
             edge: .trailing,
+            reveal: tempZoomReveal,
             onChange: onChange
           )
         }
@@ -289,33 +296,51 @@ struct ContentView: View {
       .padding(.bottom, 80)
       .ignoresSafeArea()
       .opacity(isShowing && tempZoomReveal > 0.001 ? 1 : 0)
-      .offset(x: hiddenOffset * (1 - tempZoomReveal))
       // The emerged ruler owns its own zoom drag only once committed; until
       // then the grab strip below is what tracks the pull, so the reveal
       // gesture and the ruler's zoom gesture never fight.
       .allowsHitTesting(isShowing && tempZoomCommitted)
 
-      // Invisible edge grab band on the non-default edge, hosting a
-      // UIScreenEdgePanGestureRecognizer — the platform's own tool for an
-      // inward drag that starts at the very screen edge (a pure SwiftUI
-      // DragGesture there loses the touch-down to the system's edge pan). The
-      // band is parked at the edge by the outer frame and only intercepts while
-      // uncommitted, so the emerged ruler takes over its own zoom drag after.
+      // Invisible edge grab band on the non-default edge, hosting a UIKit
+      // recognizer that claims the touch on touch-down (a pure SwiftUI
+      // DragGesture at the very edge loses it to the system's edge pan, and a
+      // UIScreenEdgePanGestureRecognizer withholds `.began` long enough that the
+      // panel visibly lags the finger). The band is parked at the edge by the
+      // outer frame and only intercepts while uncommitted, so the emerged ruler
+      // takes over its own zoom drag after.
       ScreenEdgePanCatcher(
         edge: tempEdge,
         onChanged: { inward in
-          tempZoomReveal = EdgeDragReveal.revealFraction(
-            inwardTranslation: inward, pullDistance: pullDistance)
+          // Elastic past full emergence: the panel keeps stretching inward under
+          // the finger with `UIScrollView`'s resistance curve, so pulling harder
+          // gives progressively less and never runs away.
+          tempZoomReveal = EdgeDragReveal.elasticReveal(
+            inwardTranslation: inward,
+            pullDistance: pullDistance,
+            panelWidth: CameraZoomSlider.panelWidth)
         },
         onEnded: { inward in
           let reveal = EdgeDragReveal.revealFraction(
             inwardTranslation: inward, pullDistance: pullDistance)
           let commit = EdgeDragReveal.shouldCommit(reveal: reveal)
-          withAnimation(.easeOut(duration: 0.25)) {
+          // Spring, not an ease: a stretched membrane should settle like one. The
+          // committing spring is lightly underdamped so it recoils past flush and
+          // back — now safe to do, because a reveal past 1 renders as a stretch
+          // instead of tearing the panel off the edge. Retracting stays damped:
+          // an overshoot there would only push the panel further off-screen.
+          let settle: Animation = commit
+            ? .spring(response: 0.34, dampingFraction: 0.72)
+            : .spring(response: 0.28, dampingFraction: 0.92)
+          withAnimation(settle) {
             tempZoomReveal = commit ? 1 : 0
             tempZoomCommitted = commit
           }
-          if commit { Haptic.play() }
+          if commit {
+            Haptic.play()
+            // The pull is what resolves the tip — the grab band is a separate
+            // recognizer, so the anchor view itself never sees the touch.
+            FeatureTipManager.shared.markSeen(anchorID: tipAnchorID)
+          }
         }
       )
       .frame(width: 44)
@@ -324,6 +349,29 @@ struct ContentView: View {
              alignment: tempEdge == .leading ? .leading : .trailing)
       .ignoresSafeArea()
       .allowsHitTesting(isShowing && !tempZoomCommitted)
+
+      // Anchor for the pull tip. It mirrors where the ruler emerges — flush
+      // against the edge, same height — so the bubble points at the spot to drag
+      // from, instead of at the screen-tall grab band above (whose frame would
+      // put the bubble off the bottom of the screen).
+      //
+      // `.featureTip` goes on the *sized* view, before the frame that expands it
+      // to fill the screen: the modifier reports the frame of whatever it is
+      // attached to, so attaching it after the expansion registers a
+      // full-screen, safe-area-ignoring rect. That makes the overlay's
+      // above/below math read a negative `spaceAbove`/`spaceBelow` and park the
+      // bubble off the top of the screen, clipped by the notch (JOO-148 review).
+      Color.clear
+        .frame(width: 48, height: 275)
+        .featureTip(
+          tipAnchorID,
+          isEnabled: context == .referencePhoto && !tempZoomCommitted,
+          resolution: .none)
+        .frame(maxWidth: .infinity, maxHeight: .infinity,
+               alignment: tempEdge == .leading ? .bottomLeading : .bottomTrailing)
+        .padding(.bottom, 80)
+        .ignoresSafeArea()
+        .allowsHitTesting(false)
     }
     // In-the-moment only: clear the temporary control whenever the active zoom
     // context changes — the ruler goes away (capture, cancel, the system Camera
@@ -451,6 +499,15 @@ struct ContentView: View {
       // devices it tucks behind the cutout when collapsed; on notch / other
       // devices it sits just below the top safe area as a floating panel.
       if dataProvider.selectedDateItem != nil {
+        // Whether a backdrop tap may close the canvas. It may only when the
+        // backdrop really is empty: the moment a reference photo or the live
+        // camera is up, the area around the container belongs to their own
+        // controls — the edge zoom ruler, the rotation dial and translation pad,
+        // the shutter — and reaching for one of those with the canvas closing
+        // under you is the worse failure. With a bare backdrop there's nothing
+        // down there to reach for, so the shortcut costs nothing.
+        let canTapBackdropToDismiss = cameraContext.backdropImage == nil
+          && cameraContext.mode != .live
         DynamicIslandExpandedView(
           isExpanded: $showDrawingCanvas,
           content: {
@@ -473,13 +530,18 @@ struct ContentView: View {
           onDismiss: {
             requestCanvasSaveAndDismiss()
           },
-          // A backdrop tap must never close the canvas: the surrounding area is
-          // easy to catch while drawing — and doubly so while reaching for the
-          // photo adjust controls that sit outside the container — and losing an
-          // in-progress doodle to a stray touch is unrecoverable. The tap is
-          // still absorbed by the container so it can't fall through to the
-          // grid behind.
-          dismissOnTapOutside: false
+          // Either way the tap is absorbed by the container, so it can never
+          // fall through to the grid behind.
+          dismissOnTapOutside: canTapBackdropToDismiss,
+          // Only worth watching while the shortcut is off — that's when a tap
+          // there does nothing, and someone repeating it is reaching for the
+          // dismissal it used to give them. Point them at the checkmark instead.
+          onBackdropTap: canTapBackdropToDismiss
+            ? nil
+            : {
+              FeatureTipManager.shared.registerMissedTap(
+                nudging: FeatureTipDefinitions.TipID.canvasFinish)
+            }
         )
         .id("DynamicIslandExpandedView-\(dataProvider.selectedDateItem?.id ?? "none")")
       }
@@ -529,7 +591,7 @@ struct ContentView: View {
         ShutterButton(style: .glass) {
           Task { await cameraContext.capture() }
         }
-        .disabled(cameraContext.isShutterCycling)
+        .disabled(cameraContext.isShutterCycling || cameraContext.isCapturing)
         .padding(.bottom, 32)
       }
       .ignoresSafeArea(.container, edges: .bottom)
@@ -566,8 +628,15 @@ struct ContentView: View {
             range: zoomCaps.minDisplayZoom...max(zoomCaps.minDisplayZoom, zoomCaps.maxDisplayZoom),
             keyFactors: zoomCaps.keyZoomFactors,
             edge: .leading,
+            reveal: showZoomSlider ? 1 : 0,
             onChange: { cameraContext.setZoom($0) }
           )
+          // The tip anchors on the ruler itself, not the full-screen HStack, so
+          // the bubble sits right against it. Only one of the two edge branches
+          // renders, so the anchor is never registered twice.
+          .featureTip(
+            FeatureTipDefinitions.AnchorID.cameraZoomRuler,
+            isEnabled: showZoomSlider, resolution: .touch)
         }
         Spacer(minLength: 0)
         if zoomSliderEdge == .trailing {
@@ -576,19 +645,24 @@ struct ContentView: View {
             range: zoomCaps.minDisplayZoom...max(zoomCaps.minDisplayZoom, zoomCaps.maxDisplayZoom),
             keyFactors: zoomCaps.keyZoomFactors,
             edge: .trailing,
+            reveal: showZoomSlider ? 1 : 0,
             onChange: { cameraContext.setZoom($0) }
           )
+          .featureTip(
+            FeatureTipDefinitions.AnchorID.cameraZoomRuler,
+            isEnabled: showZoomSlider, resolution: .touch)
         }
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
       .padding(.bottom, 80)
       .ignoresSafeArea()
       .opacity(showZoomSlider ? 1 : 0)
-      .offset(x: showZoomSlider ? 0 : (zoomSliderEdge == .trailing ? 140 : -140))
       .allowsHitTesting(showZoomSlider)
-      // Ease-out slide out of / back into the screen edge. No bounce: an
-      // overshoot would pull the panel inward off the edge and break the morph.
-      .animation(.easeOut(duration: 0.28), value: showZoomSlider)
+      // The panel grows out of the edge rather than sliding in from off-screen,
+      // so it enters the same way the edge-pull ruler does. A bounce is fine now
+      // — the silhouette renders an overshoot past full as a stretch, where the
+      // old fixed shape would have been pulled off the edge and broken the morph.
+      .animation(.spring(response: 0.32, dampingFraction: 0.74), value: showZoomSlider)
 
       // Temporary edge-drag zoom control (JOO-147) — on the NON-default edge.
       // Dragging inward from the opposite screen edge pulls a second, identical
@@ -647,8 +721,13 @@ struct ContentView: View {
             range: CameraReferenceContext.photoZoomRange,
             keyFactors: CameraReferenceContext.photoZoomKeyFactors,
             edge: .leading,
+            reveal: showPhotoAdjust ? 1 : 0,
             onChange: { cameraContext.setBackdropZoom($0) }
           )
+          // Step 1 of the photo-adjust tip sequence.
+          .featureTip(
+            FeatureTipDefinitions.AnchorID.photoZoomRuler,
+            isEnabled: showPhotoAdjust, resolution: .touch)
         }
         Spacer(minLength: 0)
         if zoomSliderEdge == .trailing {
@@ -657,17 +736,21 @@ struct ContentView: View {
             range: CameraReferenceContext.photoZoomRange,
             keyFactors: CameraReferenceContext.photoZoomKeyFactors,
             edge: .trailing,
+            reveal: showPhotoAdjust ? 1 : 0,
             onChange: { cameraContext.setBackdropZoom($0) }
           )
+          .featureTip(
+            FeatureTipDefinitions.AnchorID.photoZoomRuler,
+            isEnabled: showPhotoAdjust, resolution: .touch)
         }
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
       .padding(.bottom, 80)
       .ignoresSafeArea()
       .opacity(showPhotoAdjust ? 1 : 0)
-      .offset(x: showPhotoAdjust ? 0 : (zoomSliderEdge == .trailing ? 140 : -140))
       .allowsHitTesting(showPhotoAdjust)
-      .animation(.easeOut(duration: 0.28), value: showPhotoAdjust)
+      // Same emergence as the live-camera ruler above.
+      .animation(.spring(response: 0.32, dampingFraction: 0.74), value: showPhotoAdjust)
 
       // Native-Camera-style 2-axis translation pad wrapped by the rotation
       // dial, centered above the bottom edge. The dial is a polaroid-style bezel
@@ -684,11 +767,26 @@ struct ContentView: View {
             onRotationChange: { cameraContext.setBackdropRotation($0) },
             innerSide: PhotoTranslationPad.containerSide
           )
+          // Steps 3 and 4 (turn, then double-tap to level) both hang off this
+          // one anchor, so a touch on the belt retires only the bubble showing.
+          .featureTip(
+            FeatureTipDefinitions.AnchorID.photoRotationBelt,
+            isEnabled: showPhotoAdjust, resolution: .touch)
           PhotoTranslationPad(
             offset: cameraContext.backdropOffset,
             translationRange: cameraContext.backdropTranslationRange,
             onOffsetChange: { cameraContext.backdropOffset = $0 }
           )
+          // Steps 5 and 6 (scrub, then double-tap to re-center), same pattern.
+          // Also gated on the pad having somewhere to go: travel is exactly zero
+          // at 1× (the photo already covers the canvas), so without this the tips
+          // teach a gesture that provably does nothing — the user can reach them
+          // by tapping through steps 1–4 without ever zooming (JOO-148 review).
+          // They surface as soon as zoom opens up travel.
+          .featureTip(
+            FeatureTipDefinitions.AnchorID.photoTranslationPad,
+            isEnabled: showPhotoAdjust && cameraContext.backdropTranslationRange > 0,
+            resolution: .touch)
         }
         // Lifts the panel off whatever it floats over — its black plate would
         // otherwise merge into the dark backdrop behind the canvas.
