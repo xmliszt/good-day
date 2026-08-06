@@ -8,19 +8,50 @@
 import Foundation
 
 struct CountdownHelper {
-  private static var locale: Locale {
-    Locale.autoupdatingCurrent
-  }
+  /// The locale used when no caller supplies one — the device's language.
+  ///
+  /// Callers that live inside a SwiftUI hierarchy should pass `\.locale` from the
+  /// environment instead: both the app (in-app language picker) and the widgets
+  /// (app-group language override) drive their language through that key, and it
+  /// does not necessarily match the device language.
+  static let defaultLocale = Locale.autoupdatingCurrent
 
-  private static var calendar: Calendar {
+  private static func calendar(for locale: Locale) -> Calendar {
     var value = Calendar.autoupdatingCurrent
     value.locale = locale
     return value
   }
 
-  private static func localizedDurationString(years: Int, months: Int, days: Int, includeYears: Bool) -> String? {
+  /// The bundle holding `locale`'s strings, or `Bundle.main` when the app ships no
+  /// catalog for it (English, the source language, has no `.lproj` of its own).
+  ///
+  /// `String(localized:locale:)` uses `locale` only to format the interpolated
+  /// arguments — it still reads the catalog through the bundle's *own* preferred
+  /// localization, i.e. the device language. Rendering a language the user chose
+  /// inside Joodle therefore needs the matching `.lproj` bundle passed explicitly.
+  private static func localizationBundle(for locale: Locale) -> Bundle {
+    let main = Bundle.main
+    let available = main.localizations
+
+    // Widen from the most specific tag to the bare language: zh-Hant-TW → zh-Hant → zh.
+    var candidate = locale.identifier.replacingOccurrences(of: "_", with: "-")
+    while !candidate.isEmpty {
+      if let match = available.first(where: { $0.caseInsensitiveCompare(candidate) == .orderedSame }),
+        let path = main.path(forResource: match, ofType: "lproj"),
+        let bundle = Bundle(path: path)
+      {
+        return bundle
+      }
+      guard let separator = candidate.lastIndex(of: "-") else { break }
+      candidate = String(candidate[candidate.startIndex..<separator])
+    }
+
+    return main
+  }
+
+  private static func localizedDurationString(years: Int, months: Int, days: Int, includeYears: Bool, locale: Locale) -> String? {
     let formatter = DateComponentsFormatter()
-    formatter.calendar = calendar
+    formatter.calendar = calendar(for: locale)
     formatter.unitsStyle = .full
     formatter.zeroFormattingBehavior = .dropAll
     formatter.maximumUnitCount = includeYears ? 3 : 2
@@ -39,7 +70,11 @@ struct CountdownHelper {
   /// Generate countdown text from now to target date
   /// Returns the formatted countdown string (e.g., "Tomorrow", "in 2 days", etc.)
   /// For entries 1 calendar day away, shows "Tomorrow" since Joodle tracks days, not timestamps
-  static func countdownText(from now: Date, to targetDate: Date) -> String {
+  /// - Parameter locale: the language to render in. Pass the SwiftUI `\.locale`
+  ///   environment value so the result follows the in-app language override.
+  static func countdownText(from now: Date, to targetDate: Date, locale: Locale = defaultLocale) -> String {
+    let calendar = Self.calendar(for: locale)
+
     // Calculate calendar day difference (ignoring time of day)
     let startOfToday = calendar.startOfDay(for: now)
     let startOfTarget = calendar.startOfDay(for: targetDate)
@@ -62,16 +97,16 @@ struct CountdownHelper {
 
     // More than a year: show year + month + day
     if years > 0 {
-      if let duration = localizedDurationString(years: years, months: months, days: days, includeYears: true) {
-        return String(localized: "in \(duration)")
+      if let duration = localizedDurationString(years: years, months: months, days: days, includeYears: true, locale: locale) {
+        return String(localized: "in \(duration)", bundle: localizationBundle(for: locale), locale: locale)
       }
       return ""
     }
 
     // More than a month but less than a year: show month + day
     if months > 0 {
-      if let duration = localizedDurationString(years: years, months: months, days: days, includeYears: false) {
-        return String(localized: "in \(duration)")
+      if let duration = localizedDurationString(years: years, months: months, days: days, includeYears: false, locale: locale) {
+        return String(localized: "in \(duration)", bundle: localizationBundle(for: locale), locale: locale)
       }
       return ""
     }
@@ -90,16 +125,18 @@ struct CountdownHelper {
     // 1 calendar day away: show "Tomorrow"
     // This is because Joodle tracks entries by day, not by exact timestamp
     if calendarDayDiff == 1 {
-      return String(localized: "Tomorrow")
+      return String(localized: "Tomorrow", bundle: localizationBundle(for: locale), locale: locale)
     }
 
     return ""
   }
 
   /// Format date as "MMM d, yyyy" (e.g., "Jan 15, 2025")
-  static func dateText(for date: Date) -> String {
+  /// - Parameter locale: the language to render in. Pass the SwiftUI `\.locale`
+  ///   environment value so the result follows the in-app language override.
+  static func dateText(for date: Date, locale: Locale = defaultLocale) -> String {
     let formatter = DateFormatter()
-    formatter.calendar = calendar
+    formatter.calendar = calendar(for: locale)
     formatter.locale = locale
     formatter.setLocalizedDateFormatFromTemplate("yMMMd")
     return formatter.string(from: date)

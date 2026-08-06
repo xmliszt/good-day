@@ -12,6 +12,7 @@ import Combine
 struct EntryEditingView: View {
   @Environment(\.colorScheme) private var colorScheme
   @Environment(\.modelContext) private var modelContext
+  @Environment(\.locale) private var locale
 
   private let date: Date?
   private let selectedEntry: DayEntry?
@@ -193,7 +194,7 @@ struct EntryEditingView: View {
       guard entry != nil && (!entry!.body.isEmpty || entry!.drawingData != nil) else { return nil }
     }
 
-    return CountdownHelper.countdownText(from: currentTime, to: date)
+    return CountdownHelper.countdownText(from: currentTime, to: date, locale: locale)
   }
 
   /// Check if reminder exists for current date
