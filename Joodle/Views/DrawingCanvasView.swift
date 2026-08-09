@@ -212,15 +212,28 @@ struct DrawingCanvasView: View {
     return entry?.drawingData != nil
   }
 
+  /// True while a persisted doodle is still being decoded and applied, so an
+  /// empty `paths` does not yet mean an empty canvas. `drawingStateLoaded` only
+  /// flips once the decoded strokes actually land (`applyPendingStrokes`), which
+  /// is the whole in-flight window.
+  private var isLoadingExistingDoodle: Bool {
+    entryHasDoodle && !drawingStateLoaded
+  }
+
   /// Whether the camera reference button (top-left) should be visible.
   /// Mirrors the bulb button visibility logic — hidden once any stroke exists
   /// and hidden while the camera live mode is active (the top row is empty
   /// except for the flip-camera button at the center).
   private var canShowCameraButton: Bool {
-    // Never offer the camera slot for an entry that already has a doodle —
-    // `paths` is briefly empty while the async decode is in flight, which used
-    // to flash the camera button before it flipped to the trash button.
-    guard isCameraFeatureActive, !entryHasDoodle, paths.isEmpty, currentPath.isEmpty, !isCameraLive else {
+    // Gate on the load being in flight, NOT on the entry merely having a doodle.
+    // `paths` is briefly empty while the async decode runs, which used to flash
+    // the camera button before it flipped to the trash — but vetoing on
+    // `entryHasDoodle` outright meant clearing an existing doodle left the slot
+    // empty: the clear deliberately isn't persisted until dismiss, so the entry
+    // still has data while the canvas in front of the user is blank, and the
+    // trash unmounts at that same moment.
+    guard isCameraFeatureActive, !isLoadingExistingDoodle,
+          paths.isEmpty, currentPath.isEmpty, !isCameraLive else {
       return false
     }
     // In the camera tutorial, hide the button once a reference has been
@@ -336,6 +349,12 @@ struct DrawingCanvasView: View {
           .circularGlassButton()
           .disabled(isSaving)
           .tutorialHighlightAnchor(.button(id: .canvasSaveButton), cornerRadius: 22)
+          // Same gating rationale as the camera button's tip below: the canvas
+          // stays tucked in the tree when collapsed, and the bubble must not
+          // paint over the paywall lock overlay.
+          .featureTip(
+            FeatureTipDefinitions.AnchorID.canvasFinish,
+            isEnabled: isShowing && canEditOrCreate)
         }
         .disabled(!canEditOrCreate)
         .background(Color.clear)
@@ -554,16 +573,10 @@ struct DrawingCanvasView: View {
     .onChange(of: albumPickerItem) { _, newItem in
       guard let newItem else { return }
       Task {
-        if let data = try? await newItem.loadTransferable(type: Data.self),
-           let raw = UIImage(data: data) {
-          let cropped = centerCroppedSquare(raw)
-          await MainActor.run {
-            cameraContext.resetBackdropTransform()
-            cameraContext.backdropImage = cropped
-            cameraContext.cancelLive()
-          }
+        await cameraContext.importReference {
+          try? await newItem.loadTransferable(type: Data.self)
         }
-        await MainActor.run { albumPickerItem = nil }
+        albumPickerItem = nil
       }
     }
     .postHogScreenView("Drawing Canvas")
@@ -656,32 +669,6 @@ struct DrawingCanvasView: View {
 
   // MARK: - Camera Reference
 
-  /// Render the picked image upright, then center-crop to a square so the
-  /// backdrop matches the canvas aspect.
-  private func centerCroppedSquare(_ image: UIImage) -> UIImage {
-    let upright: UIImage = {
-      if image.imageOrientation == .up { return image }
-      let format = UIGraphicsImageRendererFormat()
-      format.scale = image.scale
-      format.opaque = true
-      let renderer = UIGraphicsImageRenderer(size: image.size, format: format)
-      return renderer.image { _ in
-        image.draw(in: CGRect(origin: .zero, size: image.size))
-      }
-    }()
-    let s = min(upright.size.width, upright.size.height)
-    let format = UIGraphicsImageRendererFormat()
-    format.scale = upright.scale
-    format.opaque = true
-    let renderer = UIGraphicsImageRenderer(size: CGSize(width: s, height: s), format: format)
-    return renderer.image { _ in
-      let xOff = (upright.size.width - s) / 2
-      let yOff = (upright.size.height - s) / 2
-      upright.draw(at: CGPoint(x: -xOff, y: -yOff))
-    }
-  }
-
-
   private var cameraPermissionAlertBinding: Binding<Bool> {
     Binding(
       get: { isCameraFeatureActive && cameraContext.showPermissionDeniedAlert },
@@ -735,7 +722,7 @@ struct DrawingCanvasView: View {
       Image(systemName: "photo.on.rectangle")
     }
     .circularGlassButton()
-    .disabled(isShutterCycling)
+    .disabled(isShutterCycling || cameraIsCapturing)
   }
 
   /// Top-left button in camera live mode — exits the camera back to the

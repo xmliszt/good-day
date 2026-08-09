@@ -5,10 +5,10 @@
 //  Attach points for a feature-discovery tooltip:
 //
 //  • `.featureTip(_:)` marks the target control. It reports the target's global
-//    frame to `FeatureTipManager` while on screen and (optionally) dismisses the
-//    tip when the target is tapped — without consuming the tap, so the real
-//    action still fires. Mirrors the `TutorialFrameReader` pattern
-//    (HighlightAnchorModifier.swift).
+//    frame to `FeatureTipManager` while on screen and (per `resolution`)
+//    dismisses the tip when the target is tapped or dragged — without consuming
+//    the gesture, so the real action still fires. Mirrors the
+//    `TutorialFrameReader` pattern (HighlightAnchorModifier.swift).
 //
 //  • `.featureTipScope(_:)` marks a whole screen as the scope for a `.scoped`
 //    tip, so the bubble can appear before the target row renders and clamp to a
@@ -24,18 +24,33 @@
 
 import SwiftUI
 
+/// How interacting with a target retires (marks seen) its tip.
+enum FeatureTipResolution: Equatable {
+    /// A tap resolves the tip. The default — matches buttons, rows and toggles.
+    case tap
+    /// Any touch over the target resolves whichever of its tips is currently on
+    /// screen. For controls driven by a *drag* (a zoom ruler, a scrub pad, a
+    /// rotary dial), where a `TapGesture` never fires. Unlike `.tap` it resolves
+    /// the *showing* tip rather than a fixed one, so several tips can share the
+    /// anchor and surface as a sequence — one per interaction.
+    case touch
+    /// Touching the target never resolves the tip — for anchors that only
+    /// advance to a later stage (e.g. a row that navigates deeper before the
+    /// real resolving control), or that aren't touchable at all.
+    case none
+}
+
 private struct FeatureTipAnchorModifier: ViewModifier {
     /// Anchor id (matches `FeatureTip.anchorID`).
     let anchorID: String
-    /// Tip id to mark seen on tap. Resolved from the catalogue so callers only
-    /// pass the anchor id at the call site.
+    /// Tip id `.tap` marks seen. Resolved from the catalogue so callers only
+    /// pass the anchor id at the call site. `.touch` ignores it and resolves the
+    /// showing tip instead, since it supports several tips per anchor.
     let tipID: String?
     /// Only register/show the tip while this is true.
     let isEnabled: Bool
-    /// Whether tapping the target resolves (marks seen) the tip. `false` for
-    /// targets that merely advance to a later stage (e.g. a row that navigates
-    /// deeper before the real resolving control).
-    let resolveOnTap: Bool
+    /// Which of the target's own touches resolve (mark seen) the tip.
+    let resolution: FeatureTipResolution
 
     func body(content: Content) -> some View {
         content
@@ -66,8 +81,8 @@ private struct FeatureTipAnchorModifier: ViewModifier {
             // Only attach the dismiss gesture when the target actually resolves
             // the tip. A `TapGesture` here — even simultaneous — competes with a
             // Button/Toggle's own hit testing over its icon/label, so we skip it
-            // entirely for advance-only anchors (`resolveOnTap == false`).
-            .if(resolveOnTap && tipID != nil) { view in
+            // entirely for advance-only anchors (`.none`).
+            .if(isTapResolved) { view in
                 view.simultaneousGesture(
                     TapGesture().onEnded {
                         if let tipID {
@@ -76,7 +91,30 @@ private struct FeatureTipAnchorModifier: ViewModifier {
                     }
                 )
             }
+            // A zero-distance drag catches both taps and drags, so a
+            // gesture-driven control resolves its tip the moment the user
+            // actually works it. Simultaneous, so the control's own drag still
+            // recognizes normally.
+            .if(isTouchResolved) { view in
+                view.simultaneousGesture(
+                    DragGesture(minimumDistance: 0).onEnded { _ in
+                        // Resolve whichever tip currently points at this anchor
+                        // rather than a fixed id: one control can host a short
+                        // sequence of tips (drag it, then double-tap it), and a
+                        // touch should retire only the bubble on screen.
+                        let manager = FeatureTipManager.shared
+                        guard let active = manager.activeTip,
+                            active.anchorID == anchorID
+                        else { return }
+                        manager.markSeen(active.id)
+                    }
+                )
+            }
     }
+
+    private var isTapResolved: Bool { resolution == .tap && tipID != nil }
+
+    private var isTouchResolved: Bool { resolution == .touch }
 
     private func registerIfEnabled(_ frame: CGRect) {
         guard isEnabled else { return }
@@ -139,20 +177,24 @@ extension View {
     /// Mark this view as a feature-discovery tooltip target. For
     /// `.anchorVisible` tips the bubble appears while this anchor is on screen
     /// (and `isEnabled`) and the tip is unseen; for `.scoped` tips it positions
-    /// the bubble against this anchor's live frame. Tapping the view dismisses
-    /// the tip forever when `resolveOnTap` is true.
+    /// the bubble against this anchor's live frame. Interacting with the view
+    /// dismisses the tip forever, per `resolution`.
     ///
     /// Pass `isEnabled` for targets that remain in the view tree while not
     /// actually visible, so the tooltip only shows when the target truly is.
-    /// Pass `resolveOnTap: false` for a target that only advances to a later
-    /// stage rather than resolving the tip.
-    func featureTip(_ anchorID: String, isEnabled: Bool = true, resolveOnTap: Bool = true) -> some View {
+    /// Pass `resolution: .touch` for a drag-driven control (no tap to catch),
+    /// or `.none` for a target that only advances to a later stage.
+    func featureTip(
+        _ anchorID: String,
+        isEnabled: Bool = true,
+        resolution: FeatureTipResolution = .tap
+    ) -> some View {
         let tipID = FeatureTipDefinitions.all.first { $0.anchorID == anchorID }?.id
         return modifier(FeatureTipAnchorModifier(
             anchorID: anchorID,
             tipID: tipID,
             isEnabled: isEnabled,
-            resolveOnTap: resolveOnTap
+            resolution: resolution
         ))
     }
 

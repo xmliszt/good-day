@@ -105,12 +105,19 @@ struct DynamicIslandExpandedView<Content: View>: View {
   /// exactly rather than the parent view's full-screen frame.
   let tutorialAnchorID: String?
   /// Whether tapping the backdrop outside the visible container fires
-  /// `onDismiss`. Both hosts disable it — the daily canvas because a stray
-  /// backdrop touch would silently end an in-progress doodle (only its
-  /// checkmark dismisses), the interactive tutorial because dismissal is driven
+  /// `onDismiss`. The daily canvas enables it only while the backdrop is truly
+  /// empty, since a reference photo or the live camera puts controls out there
+  /// that a stray tap would otherwise close the canvas instead of hitting; the
+  /// interactive tutorial always disables it, because dismissal is driven
   /// explicitly per step and an out-of-band close would wedge the flow. Either
   /// way the tap is still absorbed by the backdrop rather than falling through.
   let dismissOnTapOutside: Bool
+
+  /// Called for every tap on the backdrop outside the visible container,
+  /// independently of `dismissOnTapOutside` — so a host that has *disabled*
+  /// backdrop dismissal can still notice a user tapping there expecting it to
+  /// work. Taps over the container itself are absorbed before they reach here.
+  let onBackdropTap: (() -> Void)?
 
   /// Backdrop glass-start fraction — collapsed value rides the expand spring up
   /// to the theme-specific expanded value. All three live in `DIConfig`.
@@ -127,7 +134,8 @@ struct DynamicIslandExpandedView<Content: View>: View {
     hidden: Bool = false,
     onDismiss: (() -> Void)? = nil,
     tutorialAnchorID: String? = nil,
-    dismissOnTapOutside: Bool = true
+    dismissOnTapOutside: Bool = true,
+    onBackdropTap: (() -> Void)? = nil
   ) {
     self._isExpanded = isExpanded
     self.content = content()
@@ -135,6 +143,7 @@ struct DynamicIslandExpandedView<Content: View>: View {
     self.onDismiss = onDismiss
     self.tutorialAnchorID = tutorialAnchorID
     self.dismissOnTapOutside = dismissOnTapOutside
+    self.onBackdropTap = onBackdropTap
   }
 
   // MARK: - Layout adaptation
@@ -487,6 +496,7 @@ struct DynamicIslandExpandedView<Content: View>: View {
     .allowsHitTesting(isExpanded)
     .animation(isExpanded ? DIConfig.expandSpring : DIConfig.collapseSpring, value: isExpanded)
     .onTapGesture {
+      onBackdropTap?()
       // The tutorial drives canvas dismissal explicitly per step, so a stray
       // backdrop tap must not close the canvas — but the tap is still absorbed
       // here (no fall-through to the grid behind).

@@ -9,10 +9,10 @@
 //  This surface sells a gift, not a purchase: no StoreKit, no pricing cards,
 //  a single low-friction Claim button, and copy that explicitly separates
 //  this trial from an App Store free trial (no card, no auto-charge).
-//  Claiming transitions in-place to a confetti + shimmering-crown celebration.
+//  Claiming transitions in-place to the shared `ProCelebrationView` — confetti
+//  plus shimmering crown — which a completed purchase now lands on too.
 //
 
-import ConfettiSwiftUI
 import SwiftUI
 
 struct TrialClaimPaywallView: View {
@@ -24,7 +24,6 @@ struct TrialClaimPaywallView: View {
 
   /// Flips the view from offer to celebration once the claim lands.
   @State private var claimed = false
-  @State private var confettiTrigger = 0
 
   var body: some View {
     ZStack {
@@ -37,13 +36,6 @@ struct TrialClaimPaywallView: View {
       }
     }
     .animation(.springFkingSatifying, value: claimed)
-    .confettiCannon(
-      trigger: $confettiTrigger,
-      num: 60,
-      colors: [.appAccent, .yellow, .orange, .pink, .mint],
-      confettiSize: 12,
-      radius: 420
-    )
     .presentationDragIndicator(.visible)
     // Same committed dark, premium look as every other paywall surface.
     .preferredColorScheme(.dark)
@@ -174,66 +166,13 @@ struct TrialClaimPaywallView: View {
   // MARK: - Celebration
 
   private var celebration: some View {
-    VStack(spacing: 0) {
-      Spacer()
-
-      GlossyCrownView(isSubscribed: true)
-
-      VStack(spacing: 12) {
-        Text("You're Pro!")
-          .font(.appFont(size: 40, weight: .bold))
-          .multilineTextAlignment(.center)
-
-        Text("7 days of unlimited doodles, every widget, and many more exclusive features, start right now!")
-          .font(.appSubheadline())
-          .foregroundColor(.secondary)
-          .multilineTextAlignment(.center)
-          .fixedSize(horizontal: false, vertical: true)
-      }
-      .padding(.horizontal, 32)
-      .padding(.top, 24)
-
-      if let until = gracePeriodManager.gracePeriodExpirationDate {
-        HStack(spacing: 6) {
-          Image(systemName: "crown.fill")
-            .font(.appFont(size: 12))
-          Text("Pro until \(until, format: .dateTime.day().month())")
-            .font(.appCaption(weight: .bold))
-        }
-        .foregroundColor(.appAccent)
-        .padding(.horizontal, 14)
-        .padding(.vertical, 8)
-        .background(
-          Capsule()
-            .fill(Color.appAccent.opacity(0.12))
-            .overlay(Capsule().strokeBorder(Color.appAccent.opacity(0.45), lineWidth: 1))
-        )
-        .padding(.top, 20)
-      }
-
-      Spacer()
-
-      Button {
-        dismiss()
-      } label: {
-        Text("Start doodling")
-          .font(.appHeadline())
-          .foregroundColor(.appAccentContrast)
-          .frame(maxWidth: .infinity)
-          .padding(.vertical, 16)
-          .background(
-            Capsule().fill(
-              LinearGradient(
-                colors: [.appAccent.opacity(0.75), .appAccent],
-                startPoint: .leading,
-                endPoint: .trailing
-              )
-            )
-          )
-      }
-      .padding(.horizontal, 24)
-      .padding(.bottom, 24)
-    }
+    ProCelebrationView(
+      message: "7 days of unlimited doodles, every widget, and many more exclusive features, start right now!",
+      badge: gracePeriodManager.gracePeriodExpirationDate.map {
+        Text("Pro until \($0, format: .dateTime.day().month())")
+      },
+      onContinue: { dismiss() }
+    )
   }
 
   private func claim() {
@@ -241,7 +180,6 @@ struct TrialClaimPaywallView: View {
     trialOfferManager.claimTrial(source: source)
     Haptic.play(with: .medium)
     claimed = true
-    confettiTrigger += 1
   }
 }
 

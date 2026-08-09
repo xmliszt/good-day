@@ -141,23 +141,50 @@ final class CameraReferenceController: NSObject, ObservableObject, @unchecked Se
     }
   }
 
+  /// Fire-and-forget stop, for teardown paths that can't suspend (view
+  /// `onDisappear`, scene backgrounding). Prefer `stopAndWait()` whenever the
+  /// caller is about to unmount the preview — see that method for why.
   func stop() {
     sessionQueue.async { [weak self] in
-      guard let self else { return }
-      // Detach the frame delegate and release the retained frame BEFORE
-      // stopping: `stopRunning()` blocks until every buffer vended by the
-      // video data output is returned to its pool, so a held `latestPixelBuffer`
-      // would stall the stop — which in turn stalled preview/session teardown
-      // and left the canvas black for seconds on dismiss.
-      self.videoDataOutput.setSampleBufferDelegate(nil, queue: nil)
-      self.frameLock.lock()
-      self.latestPixelBuffer = nil
-      self.frameLock.unlock()
-      if self.session.isRunning {
-        self.session.stopRunning()
-      }
-      // `isRunning` is published by the didStopRunning notification observer.
+      self?.performStop()
     }
+  }
+
+  /// Stops the session and suspends until `stopRunning()` has actually returned.
+  ///
+  /// Callers that follow a stop by unmounting `CameraPreviewView` MUST await
+  /// this instead of calling `stop()`. Detaching an
+  /// `AVCaptureVideoPreviewLayer` from a still-*running* session blocks the main
+  /// thread on the capture render server (see
+  /// `CameraPreviewView.dismantleUIView`), and with a fire-and-forget stop the
+  /// unmount lands in the same main-thread turn that only just queued the stop —
+  /// so the block falls on the very commit that would have painted the new
+  /// canvas contents. Awaiting keeps the wait on `sessionQueue` and leaves the
+  /// layer detaching from an already-stopped session, which is cheap.
+  func stopAndWait() async {
+    await withCheckedContinuation { continuation in
+      sessionQueue.async { [weak self] in
+        self?.performStop()
+        continuation.resume()
+      }
+    }
+  }
+
+  /// The teardown itself. Call on `sessionQueue`.
+  private func performStop() {
+    // Detach the frame delegate and release the retained frame BEFORE
+    // stopping: `stopRunning()` blocks until every buffer vended by the
+    // video data output is returned to its pool, so a held `latestPixelBuffer`
+    // would stall the stop — which in turn stalled preview/session teardown
+    // and left the canvas black for seconds on dismiss.
+    videoDataOutput.setSampleBufferDelegate(nil, queue: nil)
+    frameLock.lock()
+    latestPixelBuffer = nil
+    frameLock.unlock()
+    if session.isRunning {
+      session.stopRunning()
+    }
+    // `isRunning` is published by the didStopRunning notification observer.
   }
 
   @MainActor

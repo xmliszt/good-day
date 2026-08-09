@@ -29,7 +29,27 @@ struct RemoteAlert: Codable, Identifiable, Equatable {
 
     /// Locales this alert targets. nil or empty means show to all locales.
     /// When non-empty, only devices whose resolved locale code is in this list see the alert.
-    let locales: [String]? = nil
+    let locales: [String]?
+
+    init(
+        id: String,
+        title: String,
+        message: String,
+        primaryButton: AlertButton,
+        secondaryButton: AlertButton? = nil,
+        imageURL: String? = nil,
+        type: AnnouncementType,
+        locales: [String]? = nil
+    ) {
+        self.id = id
+        self.title = title
+        self.message = message
+        self.primaryButton = primaryButton
+        self.secondaryButton = secondaryButton
+        self.imageURL = imageURL
+        self.type = type
+        self.locales = locales
+    }
 
     // MARK: - Announcement Type
 

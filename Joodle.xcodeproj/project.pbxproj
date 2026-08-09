@@ -7,7 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		FA078E82300D190100FCF646 /* Secrets.xcconfig in Resources */ = {isa = PBXBuildFile; fileRef = FA078E81300D190100FCF646 /* Secrets.xcconfig */; };
+		FA11AACE2F1C000100C0FE77 /* ConfettiSwiftUI in Frameworks */ = {isa = PBXBuildFile; productRef = FA11AACF2F1C000200C0FE77 /* ConfettiSwiftUI */; };
 		FA34C5092F08CE93000C510E /* MarkdownUI in Frameworks */ = {isa = PBXBuildFile; productRef = FA34C5082F08CE93000C510E /* MarkdownUI */; };
 		FA80CBF22EE9D05200E3BD1E /* Store.storekit in Resources */ = {isa = PBXBuildFile; fileRef = FA80CBF12EE9D05200E3BD1E /* Store.storekit */; };
 		FA85D4502EB7AECA007D82EE /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FA85D44F2EB7AECA007D82EE /* WidgetKit.framework */; };
@@ -15,7 +15,6 @@
 		FA8A958E2EE5CCF300FF871C /* StoreKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FA8A958D2EE5CCF300FF871C /* StoreKit.framework */; };
 		FAB12DE32ED57E2F00F6006A /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FA85D4512EB7AECA007D82EE /* SwiftUI.framework */; };
 		FABBB5B92F1BB53300B0C947 /* PostHog in Frameworks */ = {isa = PBXBuildFile; productRef = FABBB5B82F1BB53300B0C947 /* PostHog */; };
-		FA11AACE2F1C000100C0FE77 /* ConfettiSwiftUI in Frameworks */ = {isa = PBXBuildFile; productRef = FA11AACF2F1C000200C0FE77 /* ConfettiSwiftUI */; };
 		FAC5DDDE2F6110B300751BF5 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = FAC5DDDD2F6110B300751BF5 /* Localizable.xcstrings */; };
 		FAD9C5E0300D0E5600B32978 /* Secrets.xcconfig in Resources */ = {isa = PBXBuildFile; fileRef = FAD9C5DF300D0E5600B32978 /* Secrets.xcconfig */; };
 /* End PBXBuildFile section */
@@ -464,7 +463,7 @@
 				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
 				CODE_SIGN_ENTITLEMENTS = WidgetsExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 191;
+				CURRENT_PROJECT_VERSION = 214;
 				DEVELOPMENT_TEAM = AB3TLZ2LJT;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Widgets/Info.plist;
@@ -476,7 +475,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 2.8;
+				MARKETING_VERSION = 2.9;
 				PRODUCT_BUNDLE_IDENTIFIER = dev.liyuxuan.joodle.Widgets;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -498,7 +497,7 @@
 				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
 				CODE_SIGN_ENTITLEMENTS = WidgetsExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 191;
+				CURRENT_PROJECT_VERSION = 214;
 				DEVELOPMENT_TEAM = AB3TLZ2LJT;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Widgets/Info.plist;
@@ -510,7 +509,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 2.8;
+				MARKETING_VERSION = 2.9;
 				PRODUCT_BUNDLE_IDENTIFIER = dev.liyuxuan.joodle.Widgets;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -533,7 +532,7 @@
 				CODE_SIGN_ENTITLEMENTS = joodle/joodle.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 191;
+				CURRENT_PROJECT_VERSION = 214;
 				DEVELOPMENT_TEAM = AB3TLZ2LJT;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_PREVIEWS = YES;
@@ -553,7 +552,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 2.8;
+				MARKETING_VERSION = 2.9;
 				PRODUCT_BUNDLE_IDENTIFIER = dev.liyuxuan.joodle;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -573,7 +572,7 @@
 				CODE_SIGN_ENTITLEMENTS = joodle/joodle.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 191;
+				CURRENT_PROJECT_VERSION = 214;
 				DEVELOPMENT_TEAM = AB3TLZ2LJT;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_PREVIEWS = YES;
@@ -593,7 +592,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 2.8;
+				MARKETING_VERSION = 2.9;
 				PRODUCT_BUNDLE_IDENTIFIER = dev.liyuxuan.joodle;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -857,6 +856,14 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		FA11AAD02F1C000300C0FE77 /* XCRemoteSwiftPackageReference "ConfettiSwiftUI" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/simibac/ConfettiSwiftUI";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 3.0.0;
+			};
+		};
 		FA34C5072F08CE93000C510E /* XCRemoteSwiftPackageReference "swift-markdown-ui" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/gonzalezreal/swift-markdown-ui";
@@ -873,17 +880,14 @@
 				minimumVersion = 3.37.2;
 			};
 		};
-		FA11AAD02F1C000300C0FE77 /* XCRemoteSwiftPackageReference "ConfettiSwiftUI" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/simibac/ConfettiSwiftUI";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 3.0.0;
-			};
-		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		FA11AACF2F1C000200C0FE77 /* ConfettiSwiftUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = FA11AAD02F1C000300C0FE77 /* XCRemoteSwiftPackageReference "ConfettiSwiftUI" */;
+			productName = ConfettiSwiftUI;
+		};
 		FA34C5082F08CE93000C510E /* MarkdownUI */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = FA34C5072F08CE93000C510E /* XCRemoteSwiftPackageReference "swift-markdown-ui" */;
@@ -893,11 +897,6 @@
 			isa = XCSwiftPackageProductDependency;
 			package = FABBB5B72F1BB4BD00B0C947 /* XCRemoteSwiftPackageReference "posthog-ios" */;
 			productName = PostHog;
-		};
-		FA11AACF2F1C000200C0FE77 /* ConfettiSwiftUI */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = FA11AAD02F1C000300C0FE77 /* XCRemoteSwiftPackageReference "ConfettiSwiftUI" */;
-			productName = ConfettiSwiftUI;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

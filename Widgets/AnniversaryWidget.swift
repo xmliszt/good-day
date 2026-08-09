@@ -14,6 +14,15 @@ import Foundation
 
 private let kRandomAnniversaryID = "random_anniversary"
 
+/// Subtitle for the "random anniversary" option in the widget configuration picker.
+///
+/// The picker is an AppIntents surface: the system resolves it in the device
+/// language, the same as the sibling `DisplayRepresentation` titles. It therefore
+/// does not follow Joodle's in-app language override the way the widget body does.
+private var randomAnniversaryPreview: String {
+  String(localized: "🎲 Random anniversary (changes daily)")
+}
+
 // MARK: - Anniversary Entry Entity
 
 struct AnniversaryEntryEntity: AppEntity {
@@ -71,7 +80,7 @@ struct AnniversaryEntryQuery: EntityQuery, EntityStringQuery {
     let randomEntity = AnniversaryEntryEntity(
       id: kRandomAnniversaryID,
       dateString: nil,
-      preview: "🎲 Random anniversary (changes daily)"
+      preview: randomAnniversaryPreview
     )
 
     var results: [AnniversaryEntryEntity] = []
@@ -89,7 +98,7 @@ struct AnniversaryEntryQuery: EntityQuery, EntityStringQuery {
     let randomEntity = AnniversaryEntryEntity(
       id: kRandomAnniversaryID,
       dateString: nil,
-      preview: "🎲 Random anniversary (changes daily)"
+      preview: randomAnniversaryPreview
     )
     return [randomEntity] + loadFutureAnniversaries()
   }
@@ -98,7 +107,7 @@ struct AnniversaryEntryQuery: EntityQuery, EntityStringQuery {
     let randomEntity = AnniversaryEntryEntity(
       id: kRandomAnniversaryID,
       dateString: nil,
-      preview: "🎲 Random anniversary (changes daily)"
+      preview: randomAnniversaryPreview
     )
 
     let allEntries = loadFutureAnniversaries()
@@ -433,6 +442,9 @@ struct AnniversaryWidgetLockedView: View {
 struct SmallAnniversaryView: View {
   let anniversaryData: AnniversaryData
   let currentDate: Date
+  /// Set by `AnniversaryWidget` from the app-group language override, so the
+  /// countdown follows the in-app language rather than the device language.
+  @Environment(\.locale) private var locale
 
   var body: some View {
     VStack(spacing: 0) {
@@ -458,7 +470,7 @@ struct SmallAnniversaryView: View {
       Spacer()
 
       // Countdown text at bottom
-      Text(CountdownHelper.countdownText(from: currentDate, to: anniversaryData.date))
+      Text(CountdownHelper.countdownText(from: currentDate, to: anniversaryData.date, locale: locale))
         .font(.appFont(size: 10))
         .foregroundColor(.secondary)
         .padding(.horizontal, 8)
@@ -475,16 +487,19 @@ struct SmallAnniversaryView: View {
 struct MediumAnniversaryView: View {
   let anniversaryData: AnniversaryData
   let currentDate: Date
+  /// Set by `AnniversaryWidget` from the app-group language override, so the
+  /// date and countdown follow the in-app language rather than the device language.
+  @Environment(\.locale) private var locale
 
   var body: some View {
     VStack(spacing: 0) {
       // Top bar with date and countdown
       HStack {
-        Text(CountdownHelper.dateText(for: anniversaryData.date))
+        Text(CountdownHelper.dateText(for: anniversaryData.date, locale: locale))
           .font(.appFont(size: 12))
           .foregroundColor(.secondary)
         Spacer()
-        Text(CountdownHelper.countdownText(from: currentDate, to: anniversaryData.date))
+        Text(CountdownHelper.countdownText(from: currentDate, to: anniversaryData.date, locale: locale))
           .font(.appFont(size: 12))
           .foregroundColor(.secondary)
       }
@@ -536,6 +551,9 @@ struct MediumAnniversaryView: View {
 struct LargeAnniversaryView: View {
   let anniversaryData: AnniversaryData
   let currentDate: Date
+  /// Set by `AnniversaryWidget` from the app-group language override, so the
+  /// countdown follows the in-app language rather than the device language.
+  @Environment(\.locale) private var locale
 
   var body: some View {
     VStack(spacing: 8) {
@@ -558,7 +576,7 @@ struct LargeAnniversaryView: View {
       }
 
       // Countdown text at bottom
-      Text(CountdownHelper.countdownText(from: currentDate, to: anniversaryData.date))
+      Text(CountdownHelper.countdownText(from: currentDate, to: anniversaryData.date, locale: locale))
         .font(.appFont(size: 16))
         .foregroundColor(.secondary)
         .padding(.horizontal, 16)

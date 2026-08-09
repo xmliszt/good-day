@@ -19,8 +19,9 @@ class GracePeriodManager: ObservableObject {
 
     // MARK: - Constants
 
-    /// Grace period duration: 7 days
-    static let gracePeriodDuration: TimeInterval = 7 * 24 * 60 * 60
+    /// Grace period duration: 7 days. nonisolated so TrialOfferManager's pure
+    /// phase resolution can read it off the main actor.
+    nonisolated static let gracePeriodDuration: TimeInterval = 7 * 24 * 60 * 60
 
     // MARK: - Storage Keys
 
