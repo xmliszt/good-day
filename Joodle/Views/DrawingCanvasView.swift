@@ -327,6 +327,12 @@ struct DrawingCanvasView: View {
           onSetCameraZoom: { cameraContext.setZoom($0) },
           topButtonsVisible: topButtonsVisible,
           strokeRevealDate: strokeRevealDate,
+          // The floating container paints an always-black backdrop behind this
+          // row (it has to, so it blends into the Dynamic Island cutout), so the
+          // buttons and icons stay on the dark-theme foreground whatever the
+          // app's appearance is. The drawing surface below keeps following the
+          // theme — it matches the grid cells and thumbnails elsewhere.
+          pinsDarkChrome: true,
           onCommitStroke: commitCurrentStroke
         ) {
           // Save button — becomes a rotating spinner while the drawing persists.
@@ -573,7 +579,6 @@ struct DrawingCanvasView: View {
         albumPickerItem = nil
       }
     }
-    .preferredColorScheme(.dark)
     .postHogScreenView("Drawing Canvas")
   }
 
