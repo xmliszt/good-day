@@ -78,6 +78,7 @@ struct SharedCanvasView<TrailingHeader: View>: View {
   @Binding var isDrawing: Bool
 
   @Environment(\.userPreferences) private var userPreferences
+  @Environment(\.colorScheme) private var colorScheme
 
   var placeholderData: Data? = nil
   var buttonsConfig: CanvasButtonsConfig? = nil
@@ -155,6 +156,15 @@ struct SharedCanvasView<TrailingHeader: View>: View {
   /// draws the strokes statically at full.
   var strokeRevealDate: Date? = nil
 
+  /// Pins the action-buttons row to the dark-theme foreground colors regardless
+  /// of the app's appearance. Set by the floating drawing canvas: that row sits
+  /// on the Dynamic Island container's backdrop, which is always black so it can
+  /// blend into the cutout, so `Color.primary` / `.appTextSecondary` glyphs would
+  /// otherwise render dark-on-black under Light appearance. Off by default — the
+  /// onboarding and placeholder canvases draw the same row on the ordinary
+  /// adaptive app background and must keep following the theme.
+  var pinsDarkChrome: Bool = false
+
   /// Track the maximum distance from start point during a gesture to detect dots vs strokes
   @State private var maxDistanceFromStart: CGFloat = 0
   @State private var gestureStartPoint: CGPoint = .zero
@@ -215,6 +225,7 @@ struct SharedCanvasView<TrailingHeader: View>: View {
     onSetCameraZoom: @escaping (CGFloat) -> Void = { _ in },
     topButtonsVisible: Bool = true,
     strokeRevealDate: Date? = nil,
+    pinsDarkChrome: Bool = false,
     onCommitStroke: @escaping () -> Void,
     @ViewBuilder trailingHeader: @escaping () -> TrailingHeader
   ) {
@@ -247,6 +258,7 @@ struct SharedCanvasView<TrailingHeader: View>: View {
     self.onSetCameraZoom = onSetCameraZoom
     self.topButtonsVisible = topButtonsVisible
     self.strokeRevealDate = strokeRevealDate
+    self.pinsDarkChrome = pinsDarkChrome
     self.onCommitStroke = onCommitStroke
     self.TrailingHeaderView = trailingHeader
   }
@@ -396,6 +408,13 @@ struct SharedCanvasView<TrailingHeader: View>: View {
               .transition(.opacity)
           }
         }
+        // Buttons and icons commit to the dark-theme foreground when the host
+        // asks for it (the floating drawing canvas — its backdrop is always
+        // black so it blends into the Dynamic Island cutout). Written into the
+        // environment rather than as `preferredColorScheme`: that is a
+        // preference, and the scene root already writes one for the whole
+        // window, which replaces anything a nested view asks for.
+        .environment(\.colorScheme, pinsDarkChrome ? .dark : colorScheme)
         // Reserve enough height for a circular glass button (40pt + 2pt padding on
         // iOS 26+) so the row keeps the same height whether the leading/trailing
         // glass buttons are visible or only the center content (e.g. camera flip)
