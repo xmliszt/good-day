@@ -129,6 +129,7 @@ struct YearGridView: View {
               let entry = getEntryForDate(item.date, from: entriesByDateKey)
               let hasEntry = entry != nil && entry!.body.isEmpty == false
               let hasDrawing = entry?.drawingData != nil && !(entry?.drawingData?.isEmpty ?? true)
+              let doodleCount = entry?.doodleCount ?? 0
               let isHighlighted = highlightedItemId == item.id
               let isSelected = selectedItemId == item.id
               let scale = calculateScale(
@@ -141,7 +142,10 @@ struct YearGridView: View {
               let animationDelay = Double(hashValue % 500) / 1000.0
               let dateString = CalendarDate.from(item.date).dateString
               let isSourceDate = isInMoveMode && moveSourceDateString == dateString
-              let isAvailableForMove = isInMoveMode && !hasDrawing && !isSourceDate
+              // A day is a valid drop target as long as it can still hold another
+              // doodle (up to the per-day cap) — matches ContentView.handleMoveModeTap,
+              // so days that already have 1..4 doodles stay available (not just empty days).
+              let isAvailableForMove = isInMoveMode && doodleCount < DayEntry.maxDoodlesPerDay && !isSourceDate
               let month = Calendar.current.component(.month, from: item.date)
 
               YearGridDotCell(
@@ -149,6 +153,7 @@ struct YearGridView: View {
                 dotStyle: dotStyle,
                 hasEntry: hasEntry,
                 hasDrawing: hasDrawing,
+                doodleCount: doodleCount,
                 entry: entry,
                 isHighlighted: isHighlighted,
                 isSelected: isSelected,
@@ -344,6 +349,7 @@ private struct YearGridDotCell: View, Equatable {
   let dotStyle: DotStyle
   let hasEntry: Bool
   let hasDrawing: Bool
+  let doodleCount: Int
   let entry: DayEntry?
   let isHighlighted: Bool
   let isSelected: Bool
@@ -362,6 +368,7 @@ private struct YearGridDotCell: View, Equatable {
     lhs.hasAnimated == rhs.hasAnimated &&
     lhs.hasEntry == rhs.hasEntry &&
     lhs.hasDrawing == rhs.hasDrawing &&
+    lhs.doodleCount == rhs.doodleCount &&
     lhs.dotStyle == rhs.dotStyle &&
     lhs.viewMode == rhs.viewMode &&
     lhs.isInMoveMode == rhs.isInMoveMode &&
@@ -373,15 +380,16 @@ private struct YearGridDotCell: View, Equatable {
   var body: some View {
     if hasDrawing {
       // Show drawing instead of dot with specific frame sizes
-      // Use thumbnail for performance optimization
-      DrawingDisplayView(
+      // Use thumbnail for performance optimization. Multi-doodle days cross-fade
+      // through their doodles; single-doodle days render one static drawing.
+      DoodleCarouselCell(
         entry: entry,
+        doodles: entry?.doodles ?? [],
         displaySize: viewMode.drawingSize,
         dotStyle: isInMoveMode && !isSourceDate ? .past : dotStyle,
         accent: false,
         highlighted: isHighlighted || isSelected,
-        scale: scale,
-        useThumbnail: true
+        scale: scale
       )
       .frame(width: viewMode.dotSize, height: viewMode.dotSize)
       // Jelly bounce animation from bottom for drawings
@@ -401,7 +409,7 @@ private struct YearGridDotCell: View, Equatable {
         .delay(animationDelay),
         value: hasAnimated
       )
-      .opacity(isInMoveMode ? (isSourceDate ? 1.0 : 0.3) : 1.0)
+      .opacity(isInMoveMode ? ((isSourceDate || isAvailableForMove) ? 1.0 : 0.3) : 1.0)
     } else {
       // Show regular dot
       DotView(

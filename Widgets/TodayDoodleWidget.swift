@@ -72,10 +72,15 @@ struct TodayDoodleProvider: TimelineProvider {
       return nil
     }
 
-    // Two-tier fallback: file-based drawing → inline UserDefaults (backward compat) → nil
-    let drawingData: Data? = entry.hasDrawing
-      ? (WidgetDataManager.shared.loadDrawingData(for: entry.dateString) ?? entry.drawingData)
-      : nil
+    // Two-tier fallback: file-based drawing → inline UserDefaults (backward compat) → nil.
+    // When the day has multiple doodles, pick a random one per refresh tick (unseeded,
+    // so it varies each refresh — the desired behavior).
+    let drawingData: Data? = {
+      guard entry.hasDrawing else { return nil }
+      let index = entry.drawingCount > 1 ? Int.random(in: 0..<entry.drawingCount) : 0
+      return WidgetDataManager.shared.loadDrawingData(for: entry.dateString, index: index)
+        ?? entry.drawingData
+    }()
 
     return TodayDoodleData(
       dateString: entry.dateString,

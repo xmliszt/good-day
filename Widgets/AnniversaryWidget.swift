@@ -259,6 +259,16 @@ struct AnniversaryProvider: AppIntentTimelineProvider {
     return timeline
   }
 
+  /// Load a doodle for the given entry, picking a random slot when the day has
+  /// multiple doodles (unseeded, so it varies per refresh tick).
+  /// Two-tier fallback: file-based drawing → inline UserDefaults (backward compat) → nil.
+  private func loadDoodleData(for entry: WidgetEntryData) -> Data? {
+    guard entry.hasDrawing else { return nil }
+    let index = entry.drawingCount > 1 ? Int.random(in: 0..<entry.drawingCount) : 0
+    return WidgetDataManager.shared.loadDrawingData(for: entry.dateString, index: index)
+      ?? entry.drawingData
+  }
+
   private func getAnniversary(for configuration: AnniversaryConfigurationIntent) -> AnniversaryData?
   {
     let entries = WidgetDataManager.shared.loadAllEntries()
@@ -282,10 +292,7 @@ struct AnniversaryProvider: AppIntentTimelineProvider {
        let targetDateString = selectedEntry.dateString {
       // Match by dateString (timezone-agnostic)
       if let matchingEntry = futureEntries.first(where: { $0.dateString == targetDateString }) {
-        // Two-tier fallback: file-based drawing → inline UserDefaults (backward compat) → nil
-        let drawingData = matchingEntry.hasDrawing
-          ? (WidgetDataManager.shared.loadDrawingData(for: matchingEntry.dateString) ?? matchingEntry.drawingData)
-          : nil
+        let drawingData = loadDoodleData(for: matchingEntry)
         return AnniversaryData(
           dateString: matchingEntry.dateString,
           text: matchingEntry.body,
@@ -297,9 +304,7 @@ struct AnniversaryProvider: AppIntentTimelineProvider {
       // Sort by dateString and pick the earliest one
       let sortedEntries = futureEntries.sorted { $0.dateString < $1.dateString }
       if let nextEntry = sortedEntries.first {
-        let drawingData = nextEntry.hasDrawing
-          ? (WidgetDataManager.shared.loadDrawingData(for: nextEntry.dateString) ?? nextEntry.drawingData)
-          : nil
+        let drawingData = loadDoodleData(for: nextEntry)
         return AnniversaryData(
           dateString: nextEntry.dateString,
           text: nextEntry.body,
@@ -313,10 +318,7 @@ struct AnniversaryProvider: AppIntentTimelineProvider {
       return nil
     }
 
-    // Two-tier fallback: file-based drawing → inline UserDefaults (backward compat) → nil
-    let drawingData = selectedEntry.hasDrawing
-      ? (WidgetDataManager.shared.loadDrawingData(for: selectedEntry.dateString) ?? selectedEntry.drawingData)
-      : nil
+    let drawingData = loadDoodleData(for: selectedEntry)
 
     return AnniversaryData(
       dateString: selectedEntry.dateString,

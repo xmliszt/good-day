@@ -161,8 +161,12 @@ struct RandomJoodleProvider: TimelineProvider {
 
     let selectedEntry = JoodleEntries[randomIndex]
 
+    // The across-day pick above is seeded (stable per day). Within the chosen day,
+    // additionally pick a random doodle slot — unseeded, so it varies per refresh tick.
+    let doodleIndex = selectedEntry.drawingCount > 1 ? Int.random(in: 0..<selectedEntry.drawingCount) : 0
+
     // Two-tier fallback: file-based drawing → inline UserDefaults (backward compat)
-    guard let drawingData = WidgetDataManager.shared.loadDrawingData(for: selectedEntry.dateString)
+    guard let drawingData = WidgetDataManager.shared.loadDrawingData(for: selectedEntry.dateString, index: doodleIndex)
             ?? selectedEntry.drawingData else {
       return nil
     }

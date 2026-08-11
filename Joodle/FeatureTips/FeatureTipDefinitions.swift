@@ -42,6 +42,9 @@ enum FeatureTipDefinitions {
         static let photoTranslationPad = "featureTip.photoTranslation.pad"
         /// The checkmark button in the drawing canvas's top row.
         static let canvasFinish = "featureTip.canvasFinish"
+        /// The horizontal doodle carousel in the day sheet's bottom half, guiding
+        /// the user to swipe past the first doodle to add another one that day.
+        static let multiDoodleCarousel = "featureTip.multiDoodle.carousel"
     }
 
     /// Tip identifiers callers need to name. Most tips are only ever reached
@@ -244,6 +247,20 @@ enum FeatureTipDefinitions {
             message: "Tap here to finish your doodle",
             priority: 10,
             nudgeable: true,
+            showsAfterOnboarding: true
+        ),
+        // Multiple-doodles-per-day discovery: once a day has its first doodle and
+        // can still hold more, point at the carousel's trailing edge so the user
+        // learns to swipe past it to draw another doodle for the same day. Gated
+        // at the call site (`isEnabled`) to the "first doodle drawn + room left"
+        // state, and resolved by `.touch` the moment they swipe the carousel.
+        FeatureTip(
+            id: "featureTip.multiDoodle.carousel",
+            anchorID: AnchorID.multiDoodleCarousel,
+            featureKey: "multiDoodle",
+            message: "Swipe to add more doodles",
+            horizontalTarget: .trailing,
+            priority: 2,
             showsAfterOnboarding: true
         ),
         // Steps 5 and 6: the translation pad — scrubbing it, then re-centering.
