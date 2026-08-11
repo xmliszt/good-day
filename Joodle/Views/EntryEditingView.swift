@@ -307,6 +307,14 @@ struct EntryEditingView: View {
       .frame(height: drawingDisplaySize)
       .tabViewStyle(.page(indexDisplayMode: .never))
       .animation(.springFkingSatifying, value: drawingDisplaySize)
+      // Nudge the user to swipe past their first doodle to add another. Only
+      // eligible once the day has at least one doodle and can still hold more;
+      // a swipe of the carousel (a drag) retires it via `.touch`.
+      .featureTip(
+        FeatureTipDefinitions.AnchorID.multiDoodleCarousel,
+        isEnabled: !doodles.isEmpty && canAdd,
+        resolution: .touch
+      )
 
       // Page indicator: a dot per doodle, a "+" for the placeholder page.
       if pageCount > 1 {

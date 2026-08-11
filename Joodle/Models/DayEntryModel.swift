@@ -187,7 +187,7 @@ final class DayEntry {
   // MARK: - Multiple Doodles Per Day
 
   /// The maximum number of doodles a single day can hold.
-  static let maxDoodlesPerDay = 5
+  static let maxDoodlesPerDay = 3
 
   /// The day's doodles as an ordered list. Index 0 is the primary doodle backed
   /// by the scalar `drawingData`/thumbnail fields; indices 1… are decoded from

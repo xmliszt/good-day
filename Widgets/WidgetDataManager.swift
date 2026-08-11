@@ -20,8 +20,8 @@ struct WidgetEntryData: Codable {
   let dateString: String
   let hasText: Bool
   let hasDrawing: Bool
-  /// Number of doodles stored for this day (1..5). Defaults to 1 when decoding
-  /// older payloads that predate multi-doodle support.
+  /// Number of doodles stored for this day (1...maxDoodlesPerDay). Defaults to 1
+  /// when decoding older payloads that predate multi-doodle support.
   let drawingCount: Int
   let drawingData: Data?
   let thumbnail: Data?
