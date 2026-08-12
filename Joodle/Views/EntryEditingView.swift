@@ -493,7 +493,10 @@ struct EntryEditingView: View {
         // doodle the grid is currently cross-fading to — computed from the same
         // time-deterministic formula the grid cell uses — so tapping a day shows
         // the doodle the user was looking at, not always the first.
-        carouselIndex = DoodleCarouselCell.displayedIndex(count: entry?.doodleCount ?? 0)
+        carouselIndex = DoodleCarouselCell.displayedIndex(
+          count: entry?.doodleCount ?? 0,
+          seed: entry?.dateString ?? ""
+        )
 
         // Restart timer when entry changes (loaded or modified)
         startTimerIfNeeded()
