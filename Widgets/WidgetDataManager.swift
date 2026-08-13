@@ -20,6 +20,9 @@ struct WidgetEntryData: Codable {
   let dateString: String
   let hasText: Bool
   let hasDrawing: Bool
+  /// Number of doodles stored for this day (1...maxDoodlesPerDay). Defaults to 1
+  /// when decoding older payloads that predate multi-doodle support.
+  let drawingCount: Int
   let drawingData: Data?
   let thumbnail: Data?
   let body: String?
@@ -46,10 +49,11 @@ struct WidgetEntryData: Codable {
   }
 
   /// Preferred initializer using dateString for timezone-agnostic storage
-  init(dateString: String, hasText: Bool, hasDrawing: Bool, drawingData: Data? = nil, thumbnail: Data? = nil, body: String? = nil) {
+  init(dateString: String, hasText: Bool, hasDrawing: Bool, drawingCount: Int = 1, drawingData: Data? = nil, thumbnail: Data? = nil, body: String? = nil) {
     self.dateString = dateString
     self.hasText = hasText
     self.hasDrawing = hasDrawing
+    self.drawingCount = drawingCount
     self.drawingData = drawingData
     self.thumbnail = thumbnail
     self.body = body
@@ -57,12 +61,13 @@ struct WidgetEntryData: Codable {
 
   /// Legacy initializer for backward compatibility during migration
   /// Converts Date to dateString using current timezone at the moment of creation
-  init(date: Date, hasText: Bool, hasDrawing: Bool, drawingData: Data? = nil, thumbnail: Data? = nil, body: String? = nil) {
+  init(date: Date, hasText: Bool, hasDrawing: Bool, drawingCount: Int = 1, drawingData: Data? = nil, thumbnail: Data? = nil, body: String? = nil) {
     // Convert Date to dateString using current timezone
     let components = Calendar.current.dateComponents([.year, .month, .day], from: date)
     self.dateString = String(format: "%04d-%02d-%02d", components.year ?? 0, components.month ?? 1, components.day ?? 1)
     self.hasText = hasText
     self.hasDrawing = hasDrawing
+    self.drawingCount = drawingCount
     self.drawingData = drawingData
     self.thumbnail = thumbnail
     self.body = body
@@ -75,6 +80,7 @@ struct WidgetEntryData: Codable {
     case date  // Legacy key for backward compatibility
     case hasText
     case hasDrawing
+    case drawingCount
     case drawingData
     case thumbnail
     case body
@@ -100,6 +106,8 @@ struct WidgetEntryData: Codable {
 
     self.hasText = try container.decode(Bool.self, forKey: .hasText)
     self.hasDrawing = try container.decode(Bool.self, forKey: .hasDrawing)
+    // Default to 1 for older payloads that predate multi-doodle support.
+    self.drawingCount = try container.decodeIfPresent(Int.self, forKey: .drawingCount) ?? 1
     self.drawingData = try container.decodeIfPresent(Data.self, forKey: .drawingData)
     self.thumbnail = try container.decodeIfPresent(Data.self, forKey: .thumbnail)
     self.body = try container.decodeIfPresent(String.self, forKey: .body)
@@ -111,6 +119,7 @@ struct WidgetEntryData: Codable {
     try container.encode(dateString, forKey: .dateString)
     try container.encode(hasText, forKey: .hasText)
     try container.encode(hasDrawing, forKey: .hasDrawing)
+    try container.encode(drawingCount, forKey: .drawingCount)
     try container.encodeIfPresent(drawingData, forKey: .drawingData)
     try container.encodeIfPresent(thumbnail, forKey: .thumbnail)
     try container.encodeIfPresent(body, forKey: .body)
@@ -150,9 +159,29 @@ struct WidgetDataManager {
   /// - Parameter dateString: The "yyyy-MM-dd" date string identifying the entry
   /// - Returns: The raw drawing data, or `nil` if no file exists
   func loadDrawingData(for dateString: String) -> Data? {
+    loadDrawingData(for: dateString, index: 0)
+  }
+
+  /// Load drawing data for a specific doodle slot of a day.
+  ///
+  /// Reads `drawings/{dateString}-{index}.dat`. For index 0, falls back to the
+  /// legacy `drawings/{dateString}.dat` file when no per-slot file exists.
+  ///
+  /// - Parameters:
+  ///   - dateString: The "yyyy-MM-dd" date string identifying the entry
+  ///   - index: The doodle slot (0 == primary)
+  /// - Returns: The raw drawing data, or `nil` if no matching file exists
+  func loadDrawingData(for dateString: String, index: Int) -> Data? {
     guard let dirURL = drawingsDirectoryURL else { return nil }
-    let fileURL = dirURL.appendingPathComponent("\(dateString).dat")
-    return try? Data(contentsOf: fileURL)
+    let slotURL = dirURL.appendingPathComponent("\(dateString)-\(index).dat")
+    if let data = try? Data(contentsOf: slotURL) {
+      return data
+    }
+    if index == 0 {
+      let legacyURL = dirURL.appendingPathComponent("\(dateString).dat")
+      return try? Data(contentsOf: legacyURL)
+    }
+    return nil
   }
 
   // MARK: - Subscription Status

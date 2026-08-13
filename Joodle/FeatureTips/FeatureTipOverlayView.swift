@@ -33,6 +33,7 @@ struct FeatureTipOverlayView: View {
                     message: tip.message,
                     targetFrame: target.frame.offsetBy(dx: -localOrigin.x, dy: -localOrigin.y),
                     horizontalTarget: tip.horizontalTarget,
+                    targetInset: tip.targetInset,
                     screenSize: geo.size
                 )
                 .opacity(target.opacity)
@@ -127,6 +128,8 @@ private struct FeatureTipBubble: View {
     let message: LocalizedStringResource
     let targetFrame: CGRect
     let horizontalTarget: FeatureTipHorizontalTarget
+    /// Points the attach edge is pulled into the target — see `FeatureTip.targetInset`.
+    let targetInset: CGFloat
     let screenSize: CGSize
 
     @State private var bubbleSize: CGSize = .zero
@@ -136,6 +139,10 @@ private struct FeatureTipBubble: View {
     private let edgePadding: CGFloat = 16  // keep bubble this far from screen edges
     private let beakWidth: CGFloat = 18
     private let beakHeight: CGFloat = 9
+    private let cornerRadius: CGFloat = 16
+    /// Points the beak is pushed back under the pill so the two read as one
+    /// shape: butted edge-to-edge they leave a hairline antialiasing seam.
+    private let beakOverlap: CGFloat = 1
     /// Roughly half a UISwitch's width — used to aim the beak at the switch when
     /// the target is a whole toggle row rather than the control itself.
     private let trailingInset: CGFloat = 26
@@ -164,28 +171,39 @@ private struct FeatureTipBubble: View {
         return min(max(pointX, minX), maxX)
     }
 
+    /// The y the beak tip aims at: the target's near edge, pulled `targetInset`
+    /// into the frame (never past its middle).
+    private var pointY: CGFloat {
+        let inset = min(max(targetInset, 0), targetFrame.height / 2)
+        return placeBelow ? targetFrame.maxY - inset : targetFrame.minY + inset
+    }
+
     /// Vertical center of the whole bubble+beak stack. When the target is past a
     /// screen edge (off-screen), this sits the bubble flush against that edge —
     /// intentionally ignoring the safe area so it reads as "blocked by the edge".
     private var bubbleCenterY: CGFloat {
-        let totalHeight = bubbleSize.height + beakHeight
-        if placeBelow {
-            return targetFrame.maxY + gap + totalHeight / 2
-        } else {
-            return targetFrame.minY - gap - totalHeight / 2
-        }
+        // `bubbleSize` is the measured pill *and* beak (the whole VStack), so the
+        // beak must not be added again here — doing so parked every bubble a beak
+        // further from its target than `gap` says.
+        let half = bubbleSize.height / 2
+        return placeBelow ? pointY + gap + half : pointY - gap - half
     }
 
     /// Beak horizontal offset from the bubble center so it keeps pointing at the
-    /// target even when the bubble is clamped to a screen edge.
+    /// target even when the bubble is clamped to a screen edge. Bounded so the
+    /// beak's whole base stays on the pill's straight edge — pushed into a
+    /// rounded corner, the curve cuts away from the base and the beak reads as a
+    /// detached triangle.
     private var beakOffsetX: CGFloat {
         let raw = pointX - bubbleCenterX
-        let limit = max(0, bubbleSize.width / 2 - beakWidth)
+        let limit = max(0, bubbleSize.width / 2 - cornerRadius - beakWidth / 2)
         return min(max(raw, -limit), limit)
     }
 
     var body: some View {
-        VStack(spacing: 0) {
+        // Negative spacing tucks the beak's base under the pill so the seam
+        // between two identically-filled shapes never shows.
+        VStack(spacing: -beakOverlap) {
             if placeBelow {
                 beak(pointingUp: true)
             }
@@ -198,7 +216,7 @@ private struct FeatureTipBubble: View {
                 .padding(.vertical, 12)
                 .frame(maxWidth: maxWidth)
                 .background(
-                    RoundedRectangle(cornerRadius: 16)
+                    RoundedRectangle(cornerRadius: cornerRadius)
                         .fill(Color.appAccent)
                 )
 
@@ -255,6 +273,28 @@ private struct BeakTriangle: Shape {
             message: "Take a photo as reference",
             targetFrame: CGRect(x: 318, y: 98, width: 44, height: 44),
             horizontalTarget: .center,
+            targetInset: 0,
+            screenSize: CGSize(width: 393, height: 852)
+        )
+    }
+}
+
+#Preview("Feature Tip - Screen-edge target") {
+    // The zoom ruler: a tall target hugging the screen edge, so the beak is
+    // pushed as far right as the pill's straight edge allows and the attach point
+    // is inset past the ruler's empty flare.
+    ZStack {
+        Color.backgroundColor.ignoresSafeArea()
+        RoundedRectangle(cornerRadius: 20)
+            .fill(Color.black)
+            .frame(width: 48, height: 275)
+            .position(x: 369, y: 634)
+
+        FeatureTipBubble(
+            message: "Try dragging to zoom",
+            targetFrame: CGRect(x: 345, y: 497, width: 48, height: 275),
+            horizontalTarget: .center,
+            targetInset: 40,
             screenSize: CGSize(width: 393, height: 852)
         )
     }
@@ -268,6 +308,7 @@ private struct BeakTriangle: Shape {
             message: "Make your doodles wiggle",
             targetFrame: CGRect(x: 196, y: 852, width: 0, height: 0),
             horizontalTarget: .center,
+            targetInset: 0,
             screenSize: CGSize(width: 393, height: 852)
         )
     }

@@ -616,11 +616,11 @@ struct SettingsView: View {
         }
       }
       // Stage 1 of the Wiggly Strokes discovery. Tapping only advances into the
-      // Customization screen (resolveOnTap: false); the toggle there resolves the tip.
-      .featureTip(FeatureTipDefinitions.AnchorID.wigglyCustomizationRow, resolveOnTap: false)
+      // Customization screen (resolution: .none); the toggle there resolves the tip.
+      .featureTip(FeatureTipDefinitions.AnchorID.wigglyCustomizationRow, resolution: .none)
       // Stage 1 of the rainbow theme discovery, sharing this same row. Advances
       // into the Customization screen; the rainbow swatch there resolves the tip.
-      .featureTip(FeatureTipDefinitions.AnchorID.rainbowCustomizationRow, resolveOnTap: false)
+      .featureTip(FeatureTipDefinitions.AnchorID.rainbowCustomizationRow, resolution: .none)
 
       // Interactions
       NavigationLink {
@@ -2155,7 +2155,11 @@ struct DayEntryDTO: Codable {
   let drawingData: Data?
   let drawingThumbnail20: Data?
   let drawingThumbnail200: Data?
-  
+  /// Doodles 2…N for a multi-doodle day, JSON-encoded `[Doodle]` — mirrors
+  /// `DayEntry.extraDoodlesData`. Absent/nil for single-doodle days and for
+  /// backups written before the multi-doodle feature (they decode as nil).
+  let extraDoodlesData: Data?
+
   enum CodingKeys: String, CodingKey {
     case body
     case createdAt
@@ -2163,17 +2167,19 @@ struct DayEntryDTO: Codable {
     case drawingData
     case drawingThumbnail20
     case drawingThumbnail200
+    case extraDoodlesData
   }
-  
-  init(body: String, createdAt: Date, dateString: String?, drawingData: Data?, drawingThumbnail20: Data?, drawingThumbnail200: Data?) {
+
+  init(body: String, createdAt: Date, dateString: String?, drawingData: Data?, drawingThumbnail20: Data?, drawingThumbnail200: Data?, extraDoodlesData: Data?) {
     self.body = body
     self.createdAt = createdAt
     self.dateString = dateString
     self.drawingData = drawingData
     self.drawingThumbnail20 = drawingThumbnail20
     self.drawingThumbnail200 = drawingThumbnail200
+    self.extraDoodlesData = extraDoodlesData
   }
-  
+
   init(from decoder: Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
     body = try container.decode(String.self, forKey: .body)
@@ -2182,8 +2188,9 @@ struct DayEntryDTO: Codable {
     drawingData = try container.decodeIfPresent(Data.self, forKey: .drawingData)
     drawingThumbnail20 = try container.decodeIfPresent(Data.self, forKey: .drawingThumbnail20)
     drawingThumbnail200 = try container.decodeIfPresent(Data.self, forKey: .drawingThumbnail200)
+    extraDoodlesData = try container.decodeIfPresent(Data.self, forKey: .extraDoodlesData)
   }
-  
+
   func encode(to encoder: Encoder) throws {
     var container = encoder.container(keyedBy: CodingKeys.self)
     try container.encode(body, forKey: .body)
@@ -2192,6 +2199,7 @@ struct DayEntryDTO: Codable {
     try container.encodeIfPresent(drawingData, forKey: .drawingData)
     try container.encodeIfPresent(drawingThumbnail20, forKey: .drawingThumbnail20)
     try container.encodeIfPresent(drawingThumbnail200, forKey: .drawingThumbnail200)
+    try container.encodeIfPresent(extraDoodlesData, forKey: .extraDoodlesData)
   }
 }
 

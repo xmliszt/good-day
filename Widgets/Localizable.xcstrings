@@ -1256,6 +1256,47 @@
           }
         }
       }
+    },
+    "🎲 Random anniversary (changes daily)": {
+      "comment": "Subtitle shown for the \"Random\" option when choosing which anniversary the widget should display. A different anniversary is picked each day.",
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "🎲 Anniversaire aléatoire (change chaque jour)"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "🎲 ランダムな記念日（毎日変わります）"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "🎲 무작위 기념일 (매일 변경)"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "🎲 Rastgele yıl dönümü (her gün değişir)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "🎲 随机纪念日（每天更换）"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "🎲 隨機紀念日（每天更換）"
+          }
+        }
+      }
     }
   },
   "version": "1.1"

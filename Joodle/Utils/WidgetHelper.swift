@@ -55,10 +55,18 @@ class WidgetHelper {
     return dirURL
   }
 
-  /// Write drawing data to a file for a specific date entry.
+  /// Write drawing data to the legacy per-day file (`{dateString}.dat`).
+  /// Kept for backward compatibility with readers that only know the primary doodle.
   private func writeDrawingFile(dateString: String, data: Data) {
     guard let dirURL = ensureDrawingsDirectory() else { return }
     let fileURL = dirURL.appendingPathComponent("\(dateString).dat")
+    try? data.write(to: fileURL, options: .atomic)
+  }
+
+  /// Write drawing data to a per-slot file (`{dateString}-{index}.dat`) for one of a day's doodles.
+  private func writeDrawingFile(dateString: String, index: Int, data: Data) {
+    guard let dirURL = ensureDrawingsDirectory() else { return }
+    let fileURL = dirURL.appendingPathComponent("\(dateString)-\(index).dat")
     try? data.write(to: fileURL, options: .atomic)
   }
 
@@ -70,12 +78,32 @@ class WidgetHelper {
   }
 
   /// Remove orphan drawing files that are no longer present in the entries set.
-  private func cleanupOrphanDrawingFiles(validDateStrings: Set<String>) {
+  ///
+  /// A day may have both a legacy `{dateString}.dat` file and per-slot
+  /// `{dateString}-{i}.dat` files. `validDrawingCounts` maps each still-present
+  /// dateString to its current doodle count; files for absent days, and per-slot
+  /// files whose index is now beyond the day's count (it shrank), are deleted.
+  private func cleanupOrphanDrawingFiles(validDrawingCounts: [String: Int]) {
     guard let dirURL = drawingsDirectoryURL else { return }
     guard let files = try? FileManager.default.contentsOfDirectory(atPath: dirURL.path) else { return }
     for filename in files where filename.hasSuffix(".dat") {
-      let dateString = String(filename.dropLast(4)) // remove ".dat"
-      if !validDateStrings.contains(dateString) {
+      let base = String(filename.dropLast(4)) // remove ".dat"
+      // A dateString is exactly "yyyy-MM-dd" (3 dash-separated parts). A per-slot
+      // filename adds a trailing "-{index}", giving 4 parts — so split on "-" to
+      // recover the date key rather than naively stripping the last "-<number>"
+      // (which would clobber the day component).
+      let parts = base.split(separator: "-")
+      let isValid: Bool = {
+        if parts.count == 4, let slotIndex = Int(parts[3]) {
+          let dateString = parts.prefix(3).joined(separator: "-")
+          guard let count = validDrawingCounts[dateString] else { return false }
+          return slotIndex < count
+        } else if parts.count == 3 {
+          return validDrawingCounts[base] != nil
+        }
+        return false
+      }()
+      if !isValid {
         let fileURL = dirURL.appendingPathComponent(filename)
         try? FileManager.default.removeItem(at: fileURL)
       }
@@ -269,24 +297,32 @@ class WidgetHelper {
       return
     }
 
-    // Track valid dateStrings to clean up orphan drawing files afterwards
-    var validDrawingDateStrings = Set<String>()
+    // Track each valid day's doodle count to clean up orphan drawing files afterwards
+    var validDrawingCounts: [String: Int] = [:]
 
     // Convert DayEntry to widget-compatible dictionaries
     // Drawing data is stored as individual files in the App Group container (not in UserDefaults)
     // to keep the payload well under the ~4 MB practical limit.
     // Use dateString which is timezone-agnostic (the SINGLE SOURCE OF TRUTH)
     let widgetEntries: [[String: Any]] = entries.map { entry in
+      let doodles = entry.doodles
       let hasDrawing = entry.drawingData != nil && !(entry.drawingData?.isEmpty ?? true)
       var dict: [String: Any] = [
         "dateString": entry.dateString,
         "hasText": !entry.body.isEmpty,
         "hasDrawing": hasDrawing,
+        "drawingCount": doodles.count,
       ]
-      // Write drawing data to file-based storage (not UserDefaults)
-      if hasDrawing, let drawingData = entry.drawingData {
-        writeDrawingFile(dateString: entry.dateString, data: drawingData)
-        validDrawingDateStrings.insert(entry.dateString)
+      // Write each doodle to its per-slot file; also mirror the primary (slot 0) to
+      // the legacy `{dateString}.dat` path for readers that only know one doodle.
+      for (index, doodle) in doodles.enumerated() {
+        writeDrawingFile(dateString: entry.dateString, index: index, data: doodle.drawingData)
+        if index == 0 {
+          writeDrawingFile(dateString: entry.dateString, data: doodle.drawingData)
+        }
+      }
+      if !doodles.isEmpty {
+        validDrawingCounts[entry.dateString] = doodles.count
       }
       // Thumbnails stay in UserDefaults — they're only ~3 KB each
       if let thumbnail = entry.drawingThumbnail20 {
@@ -298,14 +334,15 @@ class WidgetHelper {
       return dict
     }
 
-    // Clean up orphan drawing files for entries that no longer exist
-    cleanupOrphanDrawingFiles(validDateStrings: validDrawingDateStrings)
+    // Clean up orphan drawing files for entries that no longer exist or shrank
+    cleanupOrphanDrawingFiles(validDrawingCounts: validDrawingCounts)
 
     // Convert to Codable format for storage (no drawingData — it's in files now)
     struct WidgetEntryStorage: Codable {
       let dateString: String
       let hasText: Bool
       let hasDrawing: Bool
+      let drawingCount: Int
       let thumbnail: Data?
       let body: String?
     }
@@ -315,6 +352,7 @@ class WidgetHelper {
         dateString: dict["dateString"] as? String ?? "",
         hasText: dict["hasText"] as? Bool ?? false,
         hasDrawing: dict["hasDrawing"] as? Bool ?? false,
+        drawingCount: dict["drawingCount"] as? Int ?? 0,
         thumbnail: dict["thumbnail"] as? Data,
         body: dict["body"] as? String
       )

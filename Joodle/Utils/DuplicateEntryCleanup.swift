@@ -168,24 +168,12 @@ class DuplicateEntryCleanup {
       print("DuplicateEntryCleanup: Combined text content for \(target.dateString)")
     }
 
-    // Merge drawing data if target doesn't have drawing but source does
-    if (target.drawingData == nil || target.drawingData?.isEmpty == true) &&
-       (source.drawingData != nil && source.drawingData?.isEmpty == false) {
-      target.drawingData = source.drawingData
-      target.drawingThumbnail20 = source.drawingThumbnail20
-      target.drawingThumbnail200 = source.drawingThumbnail200
+    // Merge the source's doodles into the target (skips dupes by drawing bytes,
+    // honors the per-day cap). This covers the primary drawing, its thumbnails,
+    // and any extra doodles — so a sync-conflict duplicate never loses doodles.
+    if DayEntry.mergeDoodles(from: source, into: target) {
       didMerge = true
-      print("DuplicateEntryCleanup: Merged drawing data for \(target.dateString)")
-    }
-
-    // If target has no thumbnails but source does, copy them
-    if target.drawingThumbnail20 == nil && source.drawingThumbnail20 != nil {
-      target.drawingThumbnail20 = source.drawingThumbnail20
-      didMerge = true
-    }
-    if target.drawingThumbnail200 == nil && source.drawingThumbnail200 != nil {
-      target.drawingThumbnail200 = source.drawingThumbnail200
-      didMerge = true
+      print("DuplicateEntryCleanup: Merged doodles for \(target.dateString)")
     }
 
     return didMerge

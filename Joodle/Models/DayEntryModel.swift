@@ -30,6 +30,16 @@ final class DayEntry {
   var drawingThumbnail20: Data?   // 20px with thicker strokes for year grid minimized mode & widgets
   var drawingThumbnail200: Data?  // 200px for grid and detail views
 
+  /// Additional doodles beyond the first, JSON-encoded `[Doodle]`.
+  /// The FIRST doodle for a day is always stored on the scalar `drawingData`/
+  /// `drawingThumbnail20`/`drawingThumbnail200` fields above (so all existing
+  /// read paths — grid, widgets, backup — keep working unchanged); doodles 2…N
+  /// live here. Access the full ordered list via `doodles`, never these two
+  /// representations directly. Nil means the day has at most one doodle.
+  /// Optional with a nil default so it's a lightweight additive schema change
+  /// (CloudKit-safe, no migration needed).
+  var extraDoodlesData: Data?
+
   // MARK: - Legacy thumbnail (kept for migration cleanup, will be removed in future version)
   // This property exists only to allow the migration to nil it out and reclaim storage
   // DO NOT USE - it is deprecated and will be removed
@@ -174,6 +184,138 @@ final class DayEntry {
     CalendarDate(dateString: dateString)?.displayString ?? dateString
   }
 
+  // MARK: - Multiple Doodles Per Day
+
+  /// The maximum number of doodles a single day can hold.
+  static let maxDoodlesPerDay = 3
+
+  /// The day's doodles as an ordered list. Index 0 is the primary doodle backed
+  /// by the scalar `drawingData`/thumbnail fields; indices 1… are decoded from
+  /// `extraDoodlesData`. Returns `[]` when the day has no drawing.
+  var doodles: [Doodle] {
+    var result: [Doodle] = []
+    if let data = drawingData, !data.isEmpty {
+      result.append(
+        Doodle(
+          id: Self.primaryDoodleID(for: dateString),
+          drawingData: data,
+          thumbnail20: drawingThumbnail20,
+          thumbnail200: drawingThumbnail200
+        )
+      )
+    }
+    if let extra = extraDoodlesData, !extra.isEmpty,
+       let decoded = try? JSONDecoder().decode([Doodle].self, from: extra) {
+      result.append(contentsOf: decoded)
+    }
+    return result
+  }
+
+  /// Number of doodles on this day.
+  var doodleCount: Int { doodles.count }
+
+  /// Whether another doodle can be added to this day.
+  var canAddDoodle: Bool { doodleCount < Self.maxDoodlesPerDay }
+
+  /// Replaces the day's entire ordered doodle list, re-persisting the first as
+  /// the primary scalar fields and the rest into `extraDoodlesData`. Excess
+  /// beyond `maxDoodlesPerDay` is dropped. Passing `[]` clears all drawing data.
+  func setDoodles(_ newDoodles: [Doodle]) {
+    let capped = Array(newDoodles.prefix(Self.maxDoodlesPerDay))
+    if let primary = capped.first {
+      drawingData = primary.drawingData
+      drawingThumbnail20 = primary.thumbnail20
+      drawingThumbnail200 = primary.thumbnail200
+    } else {
+      drawingData = nil
+      drawingThumbnail20 = nil
+      drawingThumbnail200 = nil
+    }
+    let extras = Array(capped.dropFirst())
+    extraDoodlesData = extras.isEmpty ? nil : try? JSONEncoder().encode(extras)
+  }
+
+  /// Appends a new doodle if under the per-day cap. No-op when already at the cap.
+  @discardableResult
+  func appendDoodle(drawingData: Data, thumbnail20: Data?, thumbnail200: Data?) -> Bool {
+    var current = doodles
+    guard current.count < Self.maxDoodlesPerDay else { return false }
+    current.append(Doodle(drawingData: drawingData, thumbnail20: thumbnail20, thumbnail200: thumbnail200))
+    setDoodles(current)
+    return true
+  }
+
+  /// Overwrites the doodle at `index`, preserving its stable id. Appends when
+  /// `index` is exactly one past the end (and under the cap); otherwise no-op.
+  func updateDoodle(at index: Int, drawingData: Data, thumbnail20: Data?, thumbnail200: Data?) {
+    var current = doodles
+    if current.indices.contains(index) {
+      current[index] = Doodle(
+        id: current[index].id,
+        drawingData: drawingData,
+        thumbnail20: thumbnail20,
+        thumbnail200: thumbnail200
+      )
+      setDoodles(current)
+    } else if index == current.count {
+      _ = appendDoodle(drawingData: drawingData, thumbnail20: thumbnail20, thumbnail200: thumbnail200)
+    }
+  }
+
+  /// Removes the doodle at `index`, compacting the remaining ones (a removed
+  /// primary is replaced by the next doodle). No-op for an out-of-range index.
+  func removeDoodle(at index: Int) {
+    var current = doodles
+    guard current.indices.contains(index) else { return }
+    current.remove(at: index)
+    setDoodles(current)
+  }
+
+  /// Merges `source`'s doodles into `target`, skipping duplicates (by drawing
+  /// bytes) and respecting the per-day cap. Used when collapsing duplicate rows
+  /// for the same date (CloudKit sync conflicts) so extra doodles aren't lost.
+  /// - Returns: true if any doodle was added to `target`.
+  @discardableResult
+  static func mergeDoodles(from source: DayEntry, into target: DayEntry) -> Bool {
+    let sourceDoodles = source.doodles
+    guard !sourceDoodles.isEmpty else { return false }
+
+    var targetDoodles = target.doodles
+    var existingKeys = Set(targetDoodles.map(\.drawingData))
+    var didAdd = false
+
+    for doodle in sourceDoodles {
+      guard targetDoodles.count < maxDoodlesPerDay else { break }
+      guard !existingKeys.contains(doodle.drawingData) else { continue }
+      targetDoodles.append(doodle)
+      existingKeys.insert(doodle.drawingData)
+      didAdd = true
+    }
+
+    if didAdd { target.setDoodles(targetDoodles) }
+    return didAdd
+  }
+
+  /// A stable, deterministic id for the primary doodle of a given date, so that
+  /// re-reading `doodles` yields consistent SwiftUI identities (needed for the
+  /// carousel cross-fade and card animations). FNV-1a over the dateString.
+  private static func primaryDoodleID(for dateString: String) -> UUID {
+    func fnv1a(seed: UInt64) -> UInt64 {
+      var hash = seed
+      for byte in dateString.utf8 {
+        hash = (hash ^ UInt64(byte)) &* 0x0000_0100_0000_01b3
+      }
+      return hash
+    }
+    let hi = fnv1a(seed: 0xcbf2_9ce4_8422_2325)
+    let lo = fnv1a(seed: 0x8422_2325_cbf2_9ce4)
+    let bytes = withUnsafeBytes(of: (hi.bigEndian, lo.bigEndian)) { Array($0) }
+    return UUID(uuid: (
+      bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
+      bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]
+    ))
+  }
+
   // MARK: - Find or Create Entry
 
   /// Finds an existing entry for the given calendar date, or creates a new one if none exists.
@@ -255,13 +397,9 @@ final class DayEntry {
         primaryEntry.body = primaryEntry.body + "\n\n---\n\n" + duplicate.body
       }
 
-      // Merge drawing if primary doesn't have one
-      if (primaryEntry.drawingData == nil || primaryEntry.drawingData?.isEmpty == true) &&
-         (duplicate.drawingData != nil && duplicate.drawingData?.isEmpty == false) {
-        primaryEntry.drawingData = duplicate.drawingData
-        primaryEntry.drawingThumbnail20 = duplicate.drawingThumbnail20
-        primaryEntry.drawingThumbnail200 = duplicate.drawingThumbnail200
-      }
+      // Merge the duplicate's doodles into the primary (skips dupes, honors the
+      // per-day cap) so a sync-conflict duplicate never drops extra doodles.
+      DayEntry.mergeDoodles(from: duplicate, into: primaryEntry)
 
       // Delete the duplicate
       modelContext.delete(duplicate)

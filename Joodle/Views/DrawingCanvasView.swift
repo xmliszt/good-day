@@ -28,6 +28,9 @@ struct DrawingCanvasView: View {
 
   let date: Date
   let entry: DayEntry?
+  /// Which doodle slot within `entry` this canvas edits. `entry.doodleCount`
+  /// (i.e. one past the last existing doodle) means "create a new doodle".
+  var doodleIndex: Int = 0
   let onDismiss: () -> Void
   /// We need this external state as DrawingCanvasView is rendered when an entry is selected
   /// But that doesn't make it visible yet as controlled by DynamicIslandExpandedView
@@ -203,13 +206,24 @@ struct DrawingCanvasView: View {
     }
   }
 
-  /// Whether the entry being opened already has a persisted doodle. Known
-  /// *synchronously* (no decode), unlike `paths` which is populated by the
-  /// async load — so the top-row layout can settle on its final shape from the
-  /// first frame instead of morphing camera→trash once the strokes land.
-  private var entryHasDoodle: Bool {
+  /// Whether the *slot being edited* already has a persisted doodle. Slot-aware
+  /// (not day-level): true only when `doodleIndex` points at an existing doodle,
+  /// so starting a fresh doodle in a new slot on a day that already has doodles
+  /// still offers the camera reference. Known without an async stroke decode, so
+  /// the top-row layout settles on its final shape from the first frame instead
+  /// of morphing camera→trash once the strokes land.
+  private var slotHasDoodle: Bool {
     if isMockMode { return mockEntry?.drawingData != nil }
-    return entry?.drawingData != nil
+    guard let entry else { return false }
+    return doodleIndex < entry.doodleCount
+  }
+
+  /// True while a persisted doodle is still being decoded and applied, so an
+  /// empty `paths` does not yet mean an empty canvas. `drawingStateLoaded` only
+  /// flips once the decoded strokes actually land (`applyPendingStrokes`), which
+  /// is the whole in-flight window.
+  private var isLoadingExistingDoodle: Bool {
+    slotHasDoodle && !drawingStateLoaded
   }
 
   /// Whether the camera reference button (top-left) should be visible.
@@ -217,10 +231,15 @@ struct DrawingCanvasView: View {
   /// and hidden while the camera live mode is active (the top row is empty
   /// except for the flip-camera button at the center).
   private var canShowCameraButton: Bool {
-    // Never offer the camera slot for an entry that already has a doodle —
-    // `paths` is briefly empty while the async decode is in flight, which used
-    // to flash the camera button before it flipped to the trash button.
-    guard isCameraFeatureActive, !entryHasDoodle, paths.isEmpty, currentPath.isEmpty, !isCameraLive else {
+    // Gate on the load being in flight, NOT on the slot merely having a doodle.
+    // `paths` is briefly empty while the async decode runs, which used to flash
+    // the camera button before it flipped to the trash — but vetoing on
+    // `slotHasDoodle` outright meant clearing an existing doodle left the slot
+    // empty: the clear deliberately isn't persisted until dismiss, so the slot
+    // still has data while the canvas in front of the user is blank, and the
+    // trash unmounts at that same moment.
+    guard isCameraFeatureActive, !isLoadingExistingDoodle,
+          paths.isEmpty, currentPath.isEmpty, !isCameraLive else {
       return false
     }
     // In the camera tutorial, hide the button once a reference has been
@@ -314,6 +333,12 @@ struct DrawingCanvasView: View {
           onSetCameraZoom: { cameraContext.setZoom($0) },
           topButtonsVisible: topButtonsVisible,
           strokeRevealDate: strokeRevealDate,
+          // The floating container paints an always-black backdrop behind this
+          // row (it has to, so it blends into the Dynamic Island cutout), so the
+          // buttons and icons stay on the dark-theme foreground whatever the
+          // app's appearance is. The drawing surface below keeps following the
+          // theme — it matches the grid cells and thumbnails elsewhere.
+          pinsDarkChrome: true,
           onCommitStroke: commitCurrentStroke
         ) {
           // Save button — becomes a rotating spinner while the drawing persists.
@@ -330,6 +355,12 @@ struct DrawingCanvasView: View {
           .circularGlassButton()
           .disabled(isSaving)
           .tutorialHighlightAnchor(.button(id: .canvasSaveButton), cornerRadius: 22)
+          // Same gating rationale as the camera button's tip below: the canvas
+          // stays tucked in the tree when collapsed, and the bubble must not
+          // paint over the paywall lock overlay.
+          .featureTip(
+            FeatureTipDefinitions.AnchorID.canvasFinish,
+            isEnabled: isShowing && canEditOrCreate)
         }
         .disabled(!canEditOrCreate)
         .background(Color.clear)
@@ -548,19 +579,12 @@ struct DrawingCanvasView: View {
     .onChange(of: albumPickerItem) { _, newItem in
       guard let newItem else { return }
       Task {
-        if let data = try? await newItem.loadTransferable(type: Data.self),
-           let raw = UIImage(data: data) {
-          let cropped = centerCroppedSquare(raw)
-          await MainActor.run {
-            cameraContext.resetBackdropTransform()
-            cameraContext.backdropImage = cropped
-            cameraContext.cancelLive()
-          }
+        await cameraContext.importReference {
+          try? await newItem.loadTransferable(type: Data.self)
         }
-        await MainActor.run { albumPickerItem = nil }
+        albumPickerItem = nil
       }
     }
-    .preferredColorScheme(.dark)
     .postHogScreenView("Drawing Canvas")
   }
 
@@ -651,32 +675,6 @@ struct DrawingCanvasView: View {
 
   // MARK: - Camera Reference
 
-  /// Render the picked image upright, then center-crop to a square so the
-  /// backdrop matches the canvas aspect.
-  private func centerCroppedSquare(_ image: UIImage) -> UIImage {
-    let upright: UIImage = {
-      if image.imageOrientation == .up { return image }
-      let format = UIGraphicsImageRendererFormat()
-      format.scale = image.scale
-      format.opaque = true
-      let renderer = UIGraphicsImageRenderer(size: image.size, format: format)
-      return renderer.image { _ in
-        image.draw(in: CGRect(origin: .zero, size: image.size))
-      }
-    }()
-    let s = min(upright.size.width, upright.size.height)
-    let format = UIGraphicsImageRendererFormat()
-    format.scale = upright.scale
-    format.opaque = true
-    let renderer = UIGraphicsImageRenderer(size: CGSize(width: s, height: s), format: format)
-    return renderer.image { _ in
-      let xOff = (upright.size.width - s) / 2
-      let yOff = (upright.size.height - s) / 2
-      upright.draw(at: CGPoint(x: -xOff, y: -yOff))
-    }
-  }
-
-
   private var cameraPermissionAlertBinding: Binding<Bool> {
     Binding(
       get: { isCameraFeatureActive && cameraContext.showPermissionDeniedAlert },
@@ -730,7 +728,7 @@ struct DrawingCanvasView: View {
       Image(systemName: "photo.on.rectangle")
     }
     .circularGlassButton()
-    .disabled(isShutterCycling)
+    .disabled(isShutterCycling || cameraIsCapturing)
   }
 
   /// Top-left button in camera live mode — exits the camera back to the
@@ -1009,7 +1007,10 @@ struct DrawingCanvasView: View {
       return
     }
 
-    guard let data = entry?.drawingData else {
+    // Load the drawing for the requested slot. A new slot (index == count) or a
+    // missing entry starts blank.
+    let slotDoodles = entry?.doodles ?? []
+    guard slotDoodles.indices.contains(doodleIndex) else {
       // Initialize with empty state for new drawings. Nothing to decode, so
       // the canvas is authoritative — and saves allowed — immediately.
       drawingStateLoaded = true
@@ -1024,7 +1025,7 @@ struct DrawingCanvasView: View {
       return
     }
 
-    loadPathsFromData(data)
+    loadPathsFromData(slotDoodles[doodleIndex].drawingData)
   }
 
   private func loadMockDrawing() {
@@ -1276,16 +1277,15 @@ struct DrawingCanvasView: View {
       return
     }
 
-    // If we have an existing entry but paths is empty, clear the drawing data
-    // If entry becomes empty (no text either), delete it entirely
+    // If we have an existing entry but paths is empty, remove the doodle at this
+    // slot. A brand-new slot (index == count) with no strokes creates nothing.
+    // If the day becomes fully empty (no doodles, no text), delete it entirely.
     if paths.isEmpty {
-      if let existingEntry = entry {
-        existingEntry.drawingData = nil
-        existingEntry.drawingThumbnail20 = nil
-        existingEntry.drawingThumbnail200 = nil
+      if let existingEntry = entry, existingEntry.doodles.indices.contains(doodleIndex) {
+        existingEntry.removeDoodle(at: doodleIndex)
 
-        // If entry is now empty (no text either), delete it
-        if existingEntry.body.isEmpty {
+        // If entry is now empty (no doodles and no text), delete it
+        if existingEntry.doodleCount == 0 && existingEntry.body.isEmpty {
           existingEntry.deleteAllForSameDate(in: modelContext)
         } else {
           try? modelContext.save()
@@ -1294,7 +1294,6 @@ struct DrawingCanvasView: View {
         if scheduleWidgetSync {
           WidgetHelper.shared.scheduleWidgetDataUpdate(in: modelContext)
         }
-
       }
       return
     }
@@ -1310,7 +1309,7 @@ struct DrawingCanvasView: View {
 
     do {
       let data = try JSONEncoder().encode(pathsData)
-      entryToSave.drawingData = data
+      entryToSave.updateDoodle(at: doodleIndex, drawingData: data, thumbnail20: nil, thumbnail200: nil)
 
       // Save drawing data synchronously so it persists immediately.
       try? modelContext.save()
@@ -1331,8 +1330,9 @@ struct DrawingCanvasView: View {
           }
 
           await MainActor.run {
-            entryToSave.drawingThumbnail20 = thumbnails.0
-            entryToSave.drawingThumbnail200 = thumbnails.1
+            // Re-apply the same drawing bytes so the slot keeps its content
+            // while the freshly rendered thumbnails fill in.
+            entryToSave.updateDoodle(at: doodleIndex, drawingData: data, thumbnail20: thumbnails.0, thumbnail200: thumbnails.1)
             try? modelContext.save()
           }
         }

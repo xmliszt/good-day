@@ -142,9 +142,11 @@ final class TrialOfferManager: ObservableObject {
 
   // MARK: - Storage Keys
 
-  private static let migrationVersionKey = "conversion_funnel_version"
-  private static let legacyInstallKey = "funnel_is_legacy_install"
-  static let freeJoodleLimitKey = "free_joodle_limit"
+  // nonisolated so the pure/static helpers below (and SubscriptionManager's
+  // nonisolated limit resolution) can read them off the main actor.
+  private nonisolated static let migrationVersionKey = "conversion_funnel_version"
+  private nonisolated static let legacyInstallKey = "funnel_is_legacy_install"
+  nonisolated static let freeJoodleLimitKey = "free_joodle_limit"
   private static let claimWindowEndKey = "trial_claim_window_end"
   private static let offerAutoPresentedKey = "trial_offer_autopresented"
   private static let postTrialSheetShownKey = "post_trial_sheet_shown"

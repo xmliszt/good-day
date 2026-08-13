@@ -25,6 +25,9 @@ extension EnvironmentValues {
 
 struct DrawingDisplayView: View {
   let entry: DayEntry?
+  /// When set, renders this specific doodle instead of the entry's primary
+  /// drawing. `entry` is still used for month-based tinting. Nil = primary.
+  let doodle: Doodle?
   let displaySize: CGFloat
   let dotStyle: DotStyle
   let accent: Bool
@@ -110,6 +113,7 @@ struct DrawingDisplayView: View {
 
   init(
     entry: DayEntry?,
+    doodle: Doodle? = nil,
     displaySize: CGFloat,
     dotStyle: DotStyle = .present,
     accent: Bool = true,
@@ -122,6 +126,7 @@ struct DrawingDisplayView: View {
     immediateAppear: Bool = false
   ) {
     self.entry = entry
+    self.doodle = doodle
     self.displaySize = displaySize
     self.dotStyle = dotStyle
     self.accent = accent
@@ -136,10 +141,16 @@ struct DrawingDisplayView: View {
 
     // Pre-load drawing paths eagerly for off-screen rendering so the Canvas
     // has data on the very first render pass (no need to wait for .onAppear)
-    if immediateAppear, let drawingData = entry?.drawingData, !drawingData.isEmpty {
+    let eagerData = doodle?.drawingData ?? entry?.drawingData
+    if immediateAppear, let drawingData = eagerData, !drawingData.isEmpty {
       _pathsWithMetadata = State(initialValue: DrawingPathCache.shared.getPathsWithMetadata(for: drawingData))
     }
   }
+
+  /// The drawing bytes to render — the injected doodle's, else the entry's primary.
+  private var resolvedDrawingData: Data? { doodle?.drawingData ?? entry?.drawingData }
+  private var resolvedThumbnail20: Data? { doodle != nil ? doodle?.thumbnail20 : entry?.drawingThumbnail20 }
+  private var resolvedThumbnail200: Data? { doodle != nil ? doodle?.thumbnail200 : entry?.drawingThumbnail200 }
 
   /// Whether the experimental wigglypaint boil should drive this drawing.
   /// Off for thumbnail cells (the boil is imperceptible at that size and not
@@ -257,7 +268,7 @@ struct DrawingDisplayView: View {
       // Start drawing animation if enabled and not yet animated
       startDrawingAnimationIfNeeded()
     }
-    .onChange(of: entry?.drawingData) { oldValue, newValue in
+    .onChange(of: resolvedDrawingData) { oldValue, newValue in
       // Load new data and animate immediately
       loadDrawingData()
       withAnimation(.springFkingSatifying) {
@@ -270,13 +281,13 @@ struct DrawingDisplayView: View {
         startDrawingAnimationIfNeeded()
       }
     }
-    .onChange(of: entry?.drawingThumbnail20) { _, _ in
+    .onChange(of: resolvedThumbnail20) { _, _ in
       // Reload thumbnail when it's updated
       if useThumbnail {
         loadDrawingData()
       }
     }
-    .onChange(of: entry?.drawingThumbnail200) { _, _ in
+    .onChange(of: resolvedThumbnail200) { _, _ in
       // Reload thumbnail when it's updated
       if useThumbnail {
         loadDrawingData()
@@ -557,7 +568,7 @@ struct DrawingDisplayView: View {
   }
 
   private func loadDrawingData() {
-    guard let drawingData = entry?.drawingData else {
+    guard let drawingData = resolvedDrawingData else {
       pathsWithMetadata = []
       wiggleSources = []
       thumbnailImage = nil
@@ -568,9 +579,9 @@ struct DrawingDisplayView: View {
       // Select appropriate thumbnail based on display size
       let thumbnailData: Data?
       if displaySize <= 20 {
-        thumbnailData = entry?.drawingThumbnail20
+        thumbnailData = resolvedThumbnail20
       } else {
-        thumbnailData = entry?.drawingThumbnail200
+        thumbnailData = resolvedThumbnail200
       }
 
       if let thumbnailData = thumbnailData {
