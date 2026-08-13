@@ -124,7 +124,11 @@ struct CameraZoomSlider: View {
   var onChange: (CGFloat) -> Void
 
   private let containerWidth: CGFloat = 48
-  private let containerHeight: CGFloat = 275
+  /// Height of the slider tab. Static so an edge-drag reveal overlay (JOO-157)
+  /// can size its grab band to the ruler's vertical band instead of the whole
+  /// screen edge, and never drift out of sync with the ruler's real height.
+  static let tabHeight: CGFloat = 275
+  private var containerHeight: CGFloat { Self.tabHeight }
   /// Inset of the ruler's outer (edge-side) end from the container edge.
   private let outerInset: CGFloat = 10
   /// Width of the value label's pill. Kept just wide enough for "0.5x" so it
