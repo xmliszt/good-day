@@ -313,6 +313,10 @@ struct ContentView: View {
       // panel visibly lags the finger). The band is parked at the edge by the
       // outer frame and only intercepts while uncommitted, so the emerged ruler
       // takes over its own zoom drag after.
+      // The band is bounded to the ruler's own vertical region (bottom-anchored,
+      // ruler-height) rather than the full edge (JOO-157): the recognizer only
+      // sees touches that hit-test into its host view, so a drag-in above the
+      // ruler is ignored.
       ScreenEdgePanCatcher(
         edge: tempEdge,
         onChanged: { inward in
@@ -348,10 +352,10 @@ struct ContentView: View {
           }
         }
       )
-      .frame(width: 44)
-      .frame(maxHeight: .infinity)
+      .frame(width: 44, height: CameraZoomSlider.tabHeight)
       .frame(maxWidth: .infinity, maxHeight: .infinity,
-             alignment: tempEdge == .leading ? .leading : .trailing)
+             alignment: tempEdge == .leading ? .bottomLeading : .bottomTrailing)
+      .padding(.bottom, 80)
       .ignoresSafeArea()
       .allowsHitTesting(isShowing && !tempZoomCommitted)
 
