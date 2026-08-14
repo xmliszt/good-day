@@ -210,6 +210,65 @@ struct DayEntryDoodleTests {
     #expect(target.doodleCount == DayEntry.maxDoodlesPerDay)  // a, b, c — d dropped at cap
     #expect(!target.doodles.map(\.drawingData).contains(bytes("d")))
   }
+
+  // MARK: - Share-doodle selection (JOO-158)
+
+  @Test func sharingSelectedDoodlePromotesItToPrimaryScalarFields() {
+    let entry = makeEntry()
+    entry.appendDoodle(drawingData: bytes("first"), thumbnail20: bytes("f20"), thumbnail200: bytes("f200"))
+    entry.appendDoodle(drawingData: bytes("second"), thumbnail20: bytes("s20"), thumbnail200: bytes("s200"))
+    entry.appendDoodle(drawingData: bytes("third"), thumbnail20: bytes("t20"), thumbnail200: bytes("t200"))
+
+    let shareSecond = entry.entryForSharingDoodle(at: 1)
+    #expect(shareSecond.drawingData == bytes("second"))
+    #expect(shareSecond.drawingThumbnail20 == bytes("s20"))
+    #expect(shareSecond.drawingThumbnail200 == bytes("s200"))
+
+    let shareThird = entry.entryForSharingDoodle(at: 2)
+    #expect(shareThird.drawingData == bytes("third"))
+    #expect(shareThird.drawingThumbnail20 == bytes("t20"))
+    #expect(shareThird.drawingThumbnail200 == bytes("t200"))
+  }
+
+  @Test func sharingSelectedDoodlePreservesDateAndBodyAndLeavesOriginalUntouched() {
+    let entry = DayEntry(body: "hello", calendarDate: CalendarDate(year: 2025, month: 7, day: 20))
+    entry.appendDoodle(drawingData: bytes("first"), thumbnail20: nil, thumbnail200: nil)
+    entry.appendDoodle(drawingData: bytes("second"), thumbnail20: nil, thumbnail200: nil)
+
+    let share = entry.entryForSharingDoodle(at: 1)
+    #expect(share.body == "hello")
+    #expect(share.dateString == entry.dateString)
+    // The share copy carries only the selected doodle — no spillover extras.
+    #expect(share.extraDoodlesData == nil)
+    #expect(share.doodleCount == 1)
+    // The original entry is untouched: its primary is still the first doodle.
+    #expect(entry.drawingData == bytes("first"))
+    #expect(entry.doodleCount == 2)
+  }
+
+  @Test func sharingIndexZeroReturnsThePrimaryEntryItself() {
+    let entry = makeEntry()
+    entry.appendDoodle(drawingData: bytes("first"), thumbnail20: nil, thumbnail200: nil)
+    entry.appendDoodle(drawingData: bytes("second"), thumbnail20: nil, thumbnail200: nil)
+    #expect(entry.entryForSharingDoodle(at: 0) === entry)
+  }
+
+  @Test func sharingOutOfRangeIndexFallsBackToPrimary() {
+    let entry = makeEntry()
+    entry.appendDoodle(drawingData: bytes("first"), thumbnail20: nil, thumbnail200: nil)
+    entry.appendDoodle(drawingData: bytes("second"), thumbnail20: nil, thumbnail200: nil)
+    // The trailing "+" carousel page (index == doodleCount) has no doodle.
+    #expect(entry.entryForSharingDoodle(at: entry.doodleCount) === entry)
+    #expect(entry.entryForSharingDoodle(at: 99) === entry)
+    #expect(entry.entryForSharingDoodle(at: -1) === entry)
+  }
+
+  @Test func sharingOnSingleDoodleDayAlwaysReturnsPrimary() {
+    let entry = makeEntry()
+    entry.appendDoodle(drawingData: bytes("only"), thumbnail20: nil, thumbnail200: nil)
+    #expect(entry.entryForSharingDoodle(at: 0) === entry)
+    #expect(entry.entryForSharingDoodle(at: 1) === entry)
+  }
 }
 
 // MARK: - Test helpers
