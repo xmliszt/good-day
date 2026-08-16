@@ -217,6 +217,25 @@ final class DayEntry {
   /// Whether another doodle can be added to this day.
   var canAddDoodle: Bool { doodleCount < Self.maxDoodlesPerDay }
 
+  /// An un-persisted `DayEntry` whose scalar drawing fields hold the doodle at
+  /// `index`, so a share card renders that specific doodle instead of always the
+  /// first. Returns `self` unchanged when `index` is 0, out of range, or the day
+  /// has fewer than two doodles — i.e. whenever the primary doodle is already the
+  /// right one to share. The returned copy is never inserted into a model context.
+  func entryForSharingDoodle(at index: Int) -> DayEntry {
+    let all = doodles
+    guard all.count > 1, index > 0, all.indices.contains(index) else { return self }
+    let selected = all[index]
+    let copy = DayEntry(
+      body: body,
+      calendarDate: calendarDate ?? CalendarDate.from(createdAt),
+      drawingData: selected.drawingData
+    )
+    copy.drawingThumbnail20 = selected.thumbnail20
+    copy.drawingThumbnail200 = selected.thumbnail200
+    return copy
+  }
+
   /// Replaces the day's entire ordered doodle list, re-persisting the first as
   /// the primary scalar fields and the rest into `extraDoodlesData`. Excess
   /// beyond `maxDoodlesPerDay` is dropped. Passing `[]` clears all drawing data.
