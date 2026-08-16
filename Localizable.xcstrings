@@ -5581,6 +5581,46 @@
         }
       }
     },
+    "Delete this doodle? This cannot be undone." : {
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Supprimer ce gribouillis ? Cette action est irréversible."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この Joodle を削除しますか？この操作は元に戻せません。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이 낙서를 삭제할까요? 되돌릴 수 없습니다."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bu Joodle silinsin mi? Bu işlem geri alınamaz."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "删除此涂鸦？此操作不可撤销。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "要刪除此塗鴉嗎？此操作無法復原。"
+          }
+        }
+      }
+    },
     "Delete this note? This cannot be undone." : {
       "localizations" : {
         "fr" : {

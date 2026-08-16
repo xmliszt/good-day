@@ -65,6 +65,7 @@ struct EntryEditingView: View {
   }
 
   @State private var showDeleteConfirmation = false
+  @State private var doodlePendingDeletionIndex: Int?
   @State private var currentTime = Date()
   @State private var isTimerActive = false
   @State private var textContent: String = ""
@@ -283,7 +284,7 @@ struct EntryEditingView: View {
               Label("Move to Another Date", systemImage: "arrow.up.right.square")
             }
             Button(role: .destructive) {
-              deleteDoodle(at: index)
+              doodlePendingDeletionIndex = index
             } label: {
               Label(String(localized: "Delete Doodle"), systemImage: "trash")
             }
@@ -532,6 +533,19 @@ struct EntryEditingView: View {
         Button("Cancel", role: .cancel) {}
       } message: {
         Text("Delete this note? This cannot be undone.")
+      }
+      .confirmationDialog(
+        "Delete Doodle",
+        isPresented: Binding(
+          get: { doodlePendingDeletionIndex != nil },
+          set: { if !$0 { doodlePendingDeletionIndex = nil } }
+        ),
+        presenting: doodlePendingDeletionIndex
+      ) { index in
+        Button("Delete", role: .destructive) { deleteDoodle(at: index) }
+        Button("Cancel", role: .cancel) {}
+      } message: { _ in
+        Text("Delete this doodle? This cannot be undone.")
       }
       .sheet(isPresented: $showShareSheet) {
         // Share the doodle currently shown in the carousel, not always the first.
