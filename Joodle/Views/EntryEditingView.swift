@@ -534,7 +534,8 @@ struct EntryEditingView: View {
         Text("Delete this note? This cannot be undone.")
       }
       .sheet(isPresented: $showShareSheet) {
-        ShareCardSelectorView(entry: entry, date: date ?? Date())
+        // Share the doodle currently shown in the carousel, not always the first.
+        ShareCardSelectorView(entry: entry?.entryForSharingDoodle(at: carouselIndex), date: date ?? Date())
       }
       .sheet(isPresented: showReminderSheetBinding ?? $_showReminderSheetInternal) {
         if let date {
