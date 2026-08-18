@@ -42,6 +42,45 @@ struct SeededRandomNumberGenerator: RandomNumberGenerator {
   }
 }
 
+// MARK: - Multi-doodle rotation (shared by the Today and Random widgets)
+
+/// The rotation window: a day's doodles are re-picked once every 2 hours so the
+/// user sees a fresh one over the course of the day. Twelve windows per day.
+private let doodleRotationWindow: TimeInterval = 2 * 60 * 60
+
+/// Picks which doodle of a multi-doodle day to show, seeded by the calendar day
+/// and the current 2-hour window. The pick is stable within a window (so the
+/// widget snapshot and timeline entry agree — no flicker) and re-rolls at each
+/// 2-hour boundary. Returns 0 when the day has at most one doodle.
+func doodleIndex(count: Int, date: Date) -> Int {
+  guard count > 1 else { return 0 }
+  let calendar = Calendar.current
+  let components = calendar.dateComponents([.year, .month, .day, .hour], from: date)
+  let year = components.year ?? 0
+  let month = components.month ?? 1
+  let day = components.day ?? 1
+  let hour = components.hour ?? 0
+  let bucket = hour / 2 // 0...11, advances every 2 hours
+  // Combine the calendar day and the 2-hour bucket into a single seed so each
+  // window gets its own decorrelated draw (SeededRandomNumberGenerator mixes it).
+  let daySeed = UInt64(year * 10000 + month * 100 + day)
+  var generator = SeededRandomNumberGenerator(seed: daySeed &* 24 &+ UInt64(bucket))
+  return Int.random(in: 0..<count, using: &generator)
+}
+
+/// The next 2-hour boundary at or after `date`, capped at the following midnight
+/// so the day still flips cleanly. Used as the widget refresh point.
+func nextDoodleRotation(after date: Date) -> Date {
+  let calendar = Calendar.current
+  let startOfDay = calendar.startOfDay(for: date)
+  let nextMidnight = calendar.date(byAdding: .day, value: 1, to: startOfDay)
+    ?? date.addingTimeInterval(doodleRotationWindow)
+  let hour = calendar.component(.hour, from: date)
+  let nextBoundaryHour = (hour / 2 + 1) * 2 // next even hour, 2...24
+  let nextBoundary = startOfDay.addingTimeInterval(TimeInterval(nextBoundaryHour) * 60 * 60)
+  return min(nextMidnight, nextBoundary)
+}
+
 struct RandomJoodleProvider: TimelineProvider {
   func placeholder(in context: Context) -> RandomJoodleEntry {
     var (generator, _) = makeSeededGenerator(for: Date(), family: context.family)
@@ -81,16 +120,9 @@ struct RandomJoodleProvider: TimelineProvider {
       hasPremiumAccess: hasPremiumAccess
     )
 
-    // Refresh every 15 minutes so widgets stay reasonably current for all users,
-    // or at midnight to flip to the new day — whichever comes first.
-    let calendar = Calendar.current
-    let nextMidnight = calendar.date(
-      byAdding: .day,
-      value: 1,
-      to: calendar.startOfDay(for: currentDate)
-    )!
-    let fifteenMinutesLater = currentDate.addingTimeInterval(900)
-    let nextUpdate = min(nextMidnight, fifteenMinutesLater)
+    // Refresh on the next 2-hour boundary so a multi-doodle day rotates to a
+    // fresh doodle over the course of the day (capped at midnight to flip days).
+    let nextUpdate = nextDoodleRotation(after: currentDate)
 
     let timeline = Timeline(entries: [entry], policy: .after(nextUpdate))
     completion(timeline)
@@ -162,11 +194,12 @@ struct RandomJoodleProvider: TimelineProvider {
     let selectedEntry = JoodleEntries[randomIndex]
 
     // The across-day pick above is seeded (stable per day). Within the chosen day,
-    // additionally pick a random doodle slot — unseeded, so it varies per refresh tick.
-    let doodleIndex = selectedEntry.drawingCount > 1 ? Int.random(in: 0..<selectedEntry.drawingCount) : 0
+    // additionally rotate the doodle slot on the same 2-hour cadence as the refresh,
+    // so a multi-doodle day shows a fresh doodle every 2 hours.
+    let slotIndex = doodleIndex(count: selectedEntry.drawingCount, date: Date())
 
     // Two-tier fallback: file-based drawing → inline UserDefaults (backward compat)
-    guard let drawingData = WidgetDataManager.shared.loadDrawingData(for: selectedEntry.dateString, index: doodleIndex)
+    guard let drawingData = WidgetDataManager.shared.loadDrawingData(for: selectedEntry.dateString, index: slotIndex)
             ?? selectedEntry.drawingData else {
       return nil
     }
