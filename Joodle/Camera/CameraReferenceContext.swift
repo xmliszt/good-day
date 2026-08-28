@@ -50,6 +50,31 @@ enum PhotoBackdropGeometry {
     let effective = effectiveZoom(zoom: zoom, rotation: rotation)
     return canvasSize / 2 * max(0, effective / cover - 1)
   }
+
+  /// The transform `SharedCanvasView` effectively applies to the reference
+  /// photo, expressed as a single affine map from "square photo laid 1:1 over
+  /// the canvas" into final canvas coordinates.
+  ///
+  /// Mirrors the modifier chain on the backdrop image exactly — `.scaleEffect`
+  /// then `.rotationEffect` (both about the view's centre) then `.offset` —
+  /// which is what lets auto-trace rasterize precisely what the user is looking
+  /// at rather than re-deriving it. Keep the two in step: if the view's chain
+  /// changes, this must change with it.
+  static func backdropTransform(
+    zoom: CGFloat, rotation: Angle, offset: CGSize, canvasSize: CGFloat = CANVAS_SIZE
+  ) -> CGAffineTransform {
+    let centre = canvasSize / 2
+    let scale = effectiveZoom(zoom: zoom, rotation: rotation)
+
+    // Read bottom-up: move the square's centre to the origin, scale, rotate,
+    // then put it back — displaced by the user's offset.
+    var transform = CGAffineTransform(translationX: -centre, y: -centre)
+    transform = transform.concatenating(CGAffineTransform(scaleX: scale, y: scale))
+    transform = transform.concatenating(CGAffineTransform(rotationAngle: rotation.radians))
+    transform = transform.concatenating(
+      CGAffineTransform(translationX: centre + offset.width, y: centre + offset.height))
+    return transform
+  }
 }
 
 @MainActor
@@ -103,6 +128,25 @@ final class CameraReferenceContext: ObservableObject {
   /// black-flash overlay — fakes a "shutter snap" so the capture feels
   /// instantaneous, without the latency cost of an actual shutter animation.
   @Published var captureFlashID: UUID? = nil
+
+  // MARK: - Auto-trace
+
+  /// Detail level the trace control is currently set to. Lives here rather than
+  /// in the control so it survives the control being unmounted (e.g. while the
+  /// camera goes live again) and stays in step with an in-flight trace.
+  @Published var autoTraceDetail: AutoTraceDetail = .default
+  /// True while a trace is running — drives the control's busy state.
+  @Published private(set) var isAutoTracing: Bool = false
+  /// Latest finished trace. The canvas owns stroke state, so the context hands
+  /// the result over rather than applying it, mirroring how `captureFlashID`
+  /// signals across the same boundary.
+  @Published var autoTraceResult: AutoTraceResult? = nil
+  /// Set when a trace found nothing worth drawing, so the canvas can say so.
+  @Published var showAutoTraceEmptyMessage: Bool = false
+
+  /// Token for the in-flight trace, so a level change mid-run supersedes the
+  /// previous request instead of racing it to the canvas.
+  private var autoTraceTask: Task<Void, Never>?
   /// True from the moment a reference is requested — shutter tap or album
   /// import — until the backdrop image is installed and the camera session has
   /// been torn back down. Views show a spinner during this window, and both
@@ -350,6 +394,44 @@ final class CameraReferenceContext: ObservableObject {
     backdropRotation = .zero
   }
 
+  /// Kicks off an auto-trace of the reference photo as it is currently framed.
+  /// Supersedes any trace already running, so sweeping the detail ruler doesn't
+  /// queue up work the user has already moved past.
+  func requestAutoTrace(detail: AutoTraceDetail) {
+    guard let image = backdropImage else { return }
+    autoTraceDetail = detail
+
+    autoTraceTask?.cancel()
+    isAutoTracing = true
+
+    let request = AutoTraceRequest(
+      image: image,
+      zoom: backdropZoom,
+      rotation: backdropRotation,
+      offset: backdropOffset,
+      detail: detail
+    )
+
+    autoTraceTask = Task { [weak self] in
+      let outcome = await AutoTraceEngine.trace(request)
+      guard !Task.isCancelled else { return }
+      guard let self else { return }
+      self.isAutoTracing = false
+      if outcome.strokes.isEmpty {
+        self.showAutoTraceEmptyMessage = true
+      } else {
+        self.autoTraceResult = AutoTraceResult(strokes: outcome.strokes, detail: detail)
+      }
+    }
+  }
+
+  /// Drops any in-flight trace and clears the busy flag.
+  func cancelAutoTrace() {
+    autoTraceTask?.cancel()
+    autoTraceTask = nil
+    isAutoTracing = false
+  }
+
   func setZoom(_ display: CGFloat) {
     #if targetEnvironment(simulator)
     // No device to drive, so reflect the slider's value directly.
@@ -525,7 +607,11 @@ final class CameraReferenceContext: ObservableObject {
       backdropRotation = .zero
       suppressPreview = false
       isCapturing = false
+      autoTraceResult = nil
+      autoTraceDetail = .default
+      showAutoTraceEmptyMessage = false
     }
+    cancelAutoTrace()
     shutter.forceReset()
   }
 

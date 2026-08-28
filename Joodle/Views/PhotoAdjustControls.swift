@@ -27,12 +27,12 @@ import SwiftUI
 
 // MARK: - Touch glow
 
-/// Eased 0→1 touch strength shared by both controls: it rises while a finger is
+/// Eased 0→1 touch strength shared by the photo-adjust controls: it rises while a finger is
 /// down, falls back to 0 after release, and always resumes from wherever the
 /// previous fade left off, so a release mid-bloom reverses without a jump.
 /// `animating` goes false once a fade has settled, letting the host pause its
 /// display-linked timeline until the next touch.
-private struct TouchGlow {
+struct TouchGlow {
   /// Rise / fall duration.
   let fadeDuration: TimeInterval
 
@@ -300,7 +300,11 @@ struct PhotoRotationDial: View {
   /// Side of the (square) translation-pad container this dial wraps.
   var innerSide: CGFloat
   /// Width of the exposed ring around the pad.
-  var bandWidth: CGFloat = 20
+  var bandWidth: CGFloat = PhotoRotationDial.defaultBandWidth
+
+  /// Default band width, exposed so siblings docking against the dial (e.g.
+  /// `TraceControl`) can line their own width up with the dial's outer edge.
+  static let defaultBandWidth: CGFloat = 20
 
   /// Corner radius of the pad container — the band's inner contour matches it so
   /// the ring reads as concentric with the pad.

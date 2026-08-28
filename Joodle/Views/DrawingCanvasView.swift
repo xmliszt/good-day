@@ -52,6 +52,10 @@ struct DrawingCanvasView: View {
   @State private var pathMetadata: [PathMetadata] = []
   @State private var currentPathIsDot = false
   @State private var showClearConfirmation = false
+  /// Size and resulting path count of the last applied auto-trace, so a re-trace
+  /// can replace it instead of stacking a second drawing on top of the first —
+  /// but only while the user hasn't drawn anything since (see `applyAutoTrace`).
+  @State private var lastAutoTrace: (strokeCount: Int, pathCountAfter: Int)?
   @State private var isDrawing = false
   @State private var showPaywall = false
   @State private var showTrialClaim = false
@@ -548,6 +552,15 @@ struct DrawingCanvasView: View {
     } message: {
       Text("Joodle couldn't save this reference photo to your album. To turn saving back on, go to Settings > General > Customization > Save photos to album.")
     }
+    .alert("Nothing to Trace", isPresented: autoTraceEmptyAlertBinding) {
+      Button("OK", role: .cancel) {}
+    } message: {
+      Text("Joodle couldn't find clear shapes in this photo. Try moving closer, adding light, or picking a subject that stands out from its background.")
+    }
+    .onChange(of: cameraContext.autoTraceResult) { _, result in
+      guard isCameraFeatureActive, let result else { return }
+      applyAutoTrace(result)
+    }
     .onChange(of: scenePhase) { _, newPhase in
       guard isCameraFeatureActive else { return }
       switch newPhase {
@@ -681,6 +694,17 @@ struct DrawingCanvasView: View {
       set: { newValue in
         if isCameraFeatureActive {
           cameraContext.showPermissionDeniedAlert = newValue
+        }
+      }
+    )
+  }
+
+  private var autoTraceEmptyAlertBinding: Binding<Bool> {
+    Binding(
+      get: { isCameraFeatureActive && cameraContext.showAutoTraceEmptyMessage },
+      set: { newValue in
+        if isCameraFeatureActive {
+          cameraContext.showAutoTraceEmptyMessage = newValue
         }
       }
     )
@@ -956,6 +980,42 @@ struct DrawingCanvasView: View {
     currentPathIsDot = false
   }
 
+  /// Commits a finished auto-trace into the canvas as ordinary strokes.
+  ///
+  /// The whole trace is a single undo step, so the existing undo button is the
+  /// escape hatch — one press and the photo is clean again.
+  ///
+  /// Re-tracing replaces the previous trace rather than stacking a second copy
+  /// on top, but only when the path count still matches what the last trace
+  /// left behind. If the user has drawn since, the counts diverge and the new
+  /// trace appends instead: guessing wrong in that direction would delete their
+  /// own strokes, which is never worth the tidier result.
+  private func applyAutoTrace(_ result: AutoTraceResult) {
+    saveStateToUndoStack()
+    redoStack.removeAll()
+
+    if let previous = lastAutoTrace,
+      paths.count == previous.pathCountAfter,
+      previous.strokeCount <= paths.count
+    {
+      paths.removeLast(previous.strokeCount)
+      pathMetadata.removeLast(previous.strokeCount)
+    }
+
+    for stroke in result.strokes {
+      paths.append(stroke.makePath())
+      pathMetadata.append(
+        PathMetadata(
+          isDot: stroke.isDot,
+          length: AutoTraceVectorizer.perimeter(of: stroke.points, closed: false)
+        )
+      )
+    }
+
+    lastAutoTrace = (strokeCount: result.strokes.count, pathCountAfter: paths.count)
+    Haptic.play(with: .medium)
+  }
+
   private func saveStateToUndoStack() {
     // Save current paths and metadata state to undo stack
     undoStack.append((paths, pathMetadata))
@@ -1211,6 +1271,7 @@ struct DrawingCanvasView: View {
     drawingStateLoaded = false
     isSaving = false
     isDismissing = false
+    lastAutoTrace = nil
   }
 
   private func saveMockDrawing() {
