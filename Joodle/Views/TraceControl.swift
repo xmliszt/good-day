@@ -37,11 +37,14 @@ struct TraceControl: View {
   /// Gap between the dial's bottom edge and this plate.
   static let dialSpacing: CGFloat = 8
 
-  private let cornerRadius: CGFloat = 18
+  private let cornerRadius: CGFloat = 14
   /// Width of the leading action cap.
-  private let capWidth: CGFloat = 68
+  private let capWidth: CGFloat = 62
+  /// Diameter of the circular well the wand sits in, so the action reads as a
+  /// button rather than a bare glyph floating on the plate.
+  private let capButtonSide: CGFloat = 34
   /// Target spacing between minor creases along the ruler.
-  private let creaseSpacing: CGFloat = 13
+  private let creaseSpacing: CGFloat = 11
 
   @State private var glow = TouchGlow()
   @State private var touchX: CGFloat?
@@ -89,15 +92,25 @@ struct TraceControl: View {
 
   private var actionCap: some View {
     ZStack {
+      // The well. Faint fill plus a hairline ring — the same recipe as the
+      // plate itself, one step brighter, so the action reads as raised out of
+      // the console rather than printed on it.
+      Circle()
+        .fill(Color.white.opacity(0.07))
+        .overlay(Circle().strokeBorder(Color.white.opacity(0.18), lineWidth: 1))
+        .frame(width: capButtonSide, height: capButtonSide)
+
       if isTracing {
         ProgressView()
           .progressViewStyle(.circular)
-          .tint(Color.white.opacity(0.8))
-          .scaleEffect(0.8)
+          .tint(Self.darkAccent)
+          .scaleEffect(0.7)
       } else {
+        // Accent, not white: this is the plate's one action, and the accent tie
+        // to the live detent is what makes the two halves read as one control.
         Image(systemName: "wand.and.sparkles")
-          .font(.system(size: 18, weight: .medium))
-          .foregroundStyle(Color.white.opacity(0.9))
+          .font(.system(size: 17, weight: .semibold))
+          .foregroundStyle(Self.darkAccent)
       }
     }
     .frame(width: capWidth, height: Self.height)
@@ -171,39 +184,65 @@ struct TraceControl: View {
   private func draw(context: GraphicsContext, size: CGSize, strength: CGFloat) {
     let midY = size.height / 2
     let accent = Self.darkAccent
+    let detents = AutoTraceDetail.allCases.map { (level: $0, x: detentX($0, width: size.width)) }
 
-    // Minor creases — a plain ruler field, densest information, lowest contrast.
+    // Bloom first, so it sits behind every tick it touches.
+    if let live = detents.first(where: { $0.level == shownLevel }) {
+      let radius = 14 + 6 * strength
+      let bloom = Path(
+        ellipseIn: CGRect(
+          x: live.x - radius, y: midY - radius, width: radius * 2, height: radius * 2))
+      context.fill(bloom, with: .color(accent.opacity(0.12 + 0.14 * strength)))
+    }
+
+    // Minor creases — the ruler field. Skipped near a detent so the two never
+    // collide into a smudge; the gap is what makes a detent read as a stop.
     let creaseCount = max(Int((size.width / creaseSpacing).rounded()), 1)
     let step = size.width / CGFloat(creaseCount)
     for i in 0...creaseCount {
       let x = step * CGFloat(i)
+      guard detents.allSatisfy({ abs($0.x - x) > detentClearance }) else { continue }
       var path = Path()
-      path.move(to: CGPoint(x: x, y: midY - 4))
-      path.addLine(to: CGPoint(x: x, y: midY + 4))
-      context.stroke(path, with: .color(.white.opacity(0.16)), lineWidth: 1)
+      path.move(to: CGPoint(x: x, y: midY - 4.5))
+      path.addLine(to: CGPoint(x: x, y: midY + 4.5))
+      context.stroke(
+        path, with: .color(.white.opacity(0.3)),
+        style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
     }
 
-    // Detents — the three levels, taller and brighter so they read as stops.
-    for level in AutoTraceDetail.allCases {
-      let x = detentX(level, width: size.width)
-      let isActive = level == shownLevel
+    // Detents. Height encodes the level — short, taller, tallest reads as
+    // "more detail" without needing three words that would have to localize.
+    for detent in detents {
+      let isActive = detent.level == shownLevel
+      let half = detentHalfHeight(detent.level)
       var path = Path()
-      path.move(to: CGPoint(x: x, y: midY - 9))
-      path.addLine(to: CGPoint(x: x, y: midY + 9))
+      path.move(to: CGPoint(x: detent.x, y: midY - half))
+      path.addLine(to: CGPoint(x: detent.x, y: midY + half))
       context.stroke(
         path,
-        with: .color(isActive ? accent : .white.opacity(0.42)),
-        lineWidth: isActive ? 2 : 1
+        with: .color(isActive ? accent : .white.opacity(0.5)),
+        style: StrokeStyle(lineWidth: isActive ? 3 : 2, lineCap: .round)
       )
 
       if isActive {
-        // Accent bloom behind the live detent, swelling while a finger is down.
-        let radius = 10 + 6 * strength
-        let bloom = Path(
-          ellipseIn: CGRect(
-            x: x - radius, y: midY - radius, width: radius * 2, height: radius * 2))
-        context.fill(bloom, with: .color(accent.opacity(0.10 + 0.16 * strength)))
+        // A dot under the live detent: the one unambiguous "you are here" mark,
+        // readable even when the accent tick sits against a bright bloom.
+        let dot = Path(
+          ellipseIn: CGRect(x: detent.x - 2.5, y: size.height - 9, width: 5, height: 5))
+        context.fill(dot, with: .color(accent))
       }
+    }
+  }
+
+  /// How far a minor crease must stay clear of a detent.
+  private var detentClearance: CGFloat { 9 }
+
+  /// Half-height of a detent tick, ascending with the level.
+  private func detentHalfHeight(_ level: AutoTraceDetail) -> CGFloat {
+    switch level {
+    case .simple: return 7
+    case .balanced: return 9.5
+    case .detailed: return 12
     }
   }
 
