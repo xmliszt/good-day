@@ -71,9 +71,12 @@ struct MonthGridWidgetProvider: TimelineProvider {
     return WidgetDataManager.shared.loadAllEntries()
       .filter { $0.dateString.hasPrefix(prefix) }
       .map { entry in
-        // Two-tier fallback: file-based drawing → inline UserDefaults (backward compat) → nil
+        // Rotate through the day's doodles: pick a random slot each refresh so a
+        // multi-doodle day cycles across the ~15-min timeline ticks. Two-tier
+        // fallback: per-slot file → inline UserDefaults (backward compat) → nil.
+        let slot = entry.drawingCount > 1 ? Int.random(in: 0..<entry.drawingCount) : 0
         let drawingData: Data? = entry.hasDrawing
-          ? (WidgetDataManager.shared.loadDrawingData(for: entry.dateString) ?? entry.drawingData)
+          ? (WidgetDataManager.shared.loadDrawingData(for: entry.dateString, index: slot) ?? entry.drawingData)
           : nil
         return WidgetDayEntry(
           dateString: entry.dateString,

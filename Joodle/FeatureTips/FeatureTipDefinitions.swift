@@ -25,6 +25,33 @@ enum FeatureTipDefinitions {
         static let rainbowSwatch = "featureTip.rainbow.swatch"
         /// The Instagram quick-share button in `ShareCardSelectorView`.
         static let instagramShare = "featureTip.instagramShare"
+        /// The live-camera zoom ruler on the handedness edge.
+        static let cameraZoomRuler = "featureTip.cameraZoom.ruler"
+        /// The reference-photo zoom ruler on the handedness edge.
+        static let photoZoomRuler = "featureTip.photoZoom.ruler"
+        /// The screen-edge grab band that pulls out a second zoom ruler, on the
+        /// edge *opposite* the handedness one. One anchor per edge, because the
+        /// bubble's copy names the edge the user has to drag from.
+        static let photoEdgeZoomLeading = "featureTip.photoEdgeZoom.leading"
+        static let photoEdgeZoomTrailing = "featureTip.photoEdgeZoom.trailing"
+        /// The rotation belt wrapping the translation pad. Hosts two tips — turn
+        /// it, then double-tap to level — off this one anchor.
+        static let photoRotationBelt = "featureTip.photoRotation.belt"
+        /// The 2-axis translation pad. Hosts two tips (scrub, then double-tap to
+        /// re-center) off one anchor.
+        static let photoTranslationPad = "featureTip.photoTranslation.pad"
+        /// The checkmark button in the drawing canvas's top row.
+        static let canvasFinish = "featureTip.canvasFinish"
+        /// The horizontal doodle carousel in the day sheet's bottom half, guiding
+        /// the user to swipe past the first doodle to add another one that day.
+        static let multiDoodleCarousel = "featureTip.multiDoodle.carousel"
+    }
+
+    /// Tip identifiers callers need to name. Most tips are only ever reached
+    /// through their anchor, so they don't need one — these are the ones a call
+    /// site addresses directly (e.g. to nudge).
+    enum TipID {
+        static let canvasFinish = "featureTip.canvasFinish"
     }
 
     /// Stable scope identifiers for `.scoped` tips. A scope is a whole screen
@@ -42,6 +69,37 @@ enum FeatureTipDefinitions {
     /// Shared key linking the two-stage rainbow theme discovery so selecting the
     /// rainbow swatch resolves both stages at once.
     private static let rainbowFeature = "rainbow"
+
+    /// Shared key for the pull-out zoom ruler, whose bubble comes in a
+    /// left-edge and a right-edge wording — only one of the two is ever
+    /// anchored (the edge opposite the user's handedness), and resolving it
+    /// retires both wordings.
+    private static let photoEdgeZoomFeature = "photoEdgeZoom"
+
+    /// Shared key for the ruler-drag lesson. The live-camera ruler and the
+    /// reference-photo one are the same control taught the same way, and they
+    /// appear back to back (drag to zoom, shoot, then adjust the photo) — so
+    /// working either one retires the lesson instead of restating it verbatim.
+    private static let zoomDragFeature = "zoomDrag"
+
+    /// Points to pull a zoom-ruler tip's attach point down into the ruler. The
+    /// ruler's top ~64pt is the ogee that morphs it into the screen edge, so a
+    /// bubble hung off the container's top edge floats over empty space; this
+    /// lands the beak on the ruler's solid body instead.
+    private static let zoomRulerInset: CGFloat = 40
+
+    /// Points to pull a translation-pad tip's attach point down into the pad.
+    /// The pad is ringed by the rotation dial's 20pt band, whose indicator dot
+    /// sits at top center — right where an un-inset beak would point.
+    private static let translationPadInset: CGFloat = 24
+
+    // Priorities 11…20 are the camera / reference-photo gesture tips. Every
+    // reference-photo control is on screen at once, so priority alone decides
+    // the order the bubbles walk the user through them: zoom (16), the pull-out
+    // ruler on the other edge (15), rotate (14), level (13), move (12),
+    // re-center (11). Each has its own `featureKey`, so working one control
+    // retires only that step and lets the next surface. The band sits above
+    // every other tip so the sequence never interleaves with them.
 
     /// All defined tips. Order is irrelevant — `FeatureTipManager` selects by
     /// `priority`.
@@ -110,6 +168,118 @@ enum FeatureTipDefinitions {
             featureKey: "instagramShare",
             message: "Share your doodle to Instagram",
             priority: 1,
+            showsAfterOnboarding: true
+        ),
+        // Live camera: the fine-zoom ruler on the handedness edge. Its own mode,
+        // so it never competes with the reference-photo sequence below.
+        FeatureTip(
+            id: "featureTip.cameraZoom.ruler",
+            anchorID: AnchorID.cameraZoomRuler,
+            featureKey: zoomDragFeature,
+            message: "Try dragging to zoom",
+            targetInset: zoomRulerInset,
+            priority: 20,
+            showsAfterOnboarding: true
+        ),
+        // Reference photo, step 1 of 6: the zoom ruler on the handedness edge.
+        // Shares the live camera's feature key — same control, same lesson.
+        FeatureTip(
+            id: "featureTip.photoZoom.ruler",
+            anchorID: AnchorID.photoZoomRuler,
+            featureKey: zoomDragFeature,
+            message: "Try dragging to zoom",
+            targetInset: zoomRulerInset,
+            priority: 16,
+            showsAfterOnboarding: true
+        ),
+        // Step 2: the second ruler hiding behind the opposite edge. Two wordings
+        // for one feature — the anchored one names the edge to pull from.
+        FeatureTip(
+            id: "featureTip.photoEdgeZoom.leading",
+            anchorID: AnchorID.photoEdgeZoomLeading,
+            featureKey: photoEdgeZoomFeature,
+            message: "Drag out from the left edge",
+            targetInset: zoomRulerInset,
+            priority: 15,
+            showsAfterOnboarding: true
+        ),
+        FeatureTip(
+            id: "featureTip.photoEdgeZoom.trailing",
+            anchorID: AnchorID.photoEdgeZoomTrailing,
+            featureKey: photoEdgeZoomFeature,
+            message: "Drag out from the right edge",
+            targetInset: zoomRulerInset,
+            priority: 15,
+            showsAfterOnboarding: true
+        ),
+        // Steps 3 and 4: the rotation belt — turning it, then levelling it.
+        FeatureTip(
+            id: "featureTip.photoRotation.drag",
+            anchorID: AnchorID.photoRotationBelt,
+            featureKey: "photoRotationDrag",
+            message: "Drag the belt to rotate",
+            priority: 14,
+            showsAfterOnboarding: true
+        ),
+        FeatureTip(
+            id: "featureTip.photoRotation.reset",
+            anchorID: AnchorID.photoRotationBelt,
+            featureKey: "photoRotationReset",
+            message: "Double-tap to reset rotation",
+            priority: 13,
+            showsAfterOnboarding: true
+        ),
+        // How to leave the expanded canvas. Tapping the surrounding backdrop used
+        // to collapse it, so a user who reaches for that now gets nothing and
+        // reads it as a bug — the checkmark is the only way out. Priority 10 puts
+        // it directly under the gesture band: while the reference-photo controls
+        // are up the user is mid-adjustment, not hunting for the exit, so that
+        // sequence runs first; everywhere else this outranks every other tip.
+        //
+        // `nudgeable`, so it comes back for a few seconds when someone taps the
+        // backdrop repeatedly — the exact gesture that used to close the canvas.
+        // That's the one hint worth repeating: a user who can't find the way out
+        // is stuck, whereas every other tip is only ever a suggestion.
+        FeatureTip(
+            id: TipID.canvasFinish,
+            anchorID: AnchorID.canvasFinish,
+            featureKey: "canvasFinish",
+            message: "Tap here to finish your doodle",
+            priority: 10,
+            nudgeable: true,
+            showsAfterOnboarding: true
+        ),
+        // Multiple-doodles-per-day discovery: once a day has its first doodle and
+        // can still hold more, point at the carousel's trailing edge so the user
+        // learns to swipe past it to draw another doodle for the same day. Gated
+        // at the call site (`isEnabled`) to the "first doodle drawn + room left"
+        // state, and resolved by `.touch` the moment they swipe the carousel.
+        FeatureTip(
+            id: "featureTip.multiDoodle.carousel",
+            anchorID: AnchorID.multiDoodleCarousel,
+            featureKey: "multiDoodle",
+            message: "Swipe to add more doodles",
+            horizontalTarget: .trailing,
+            priority: 2,
+            showsAfterOnboarding: true
+        ),
+        // Steps 5 and 6: the translation pad — scrubbing it, then re-centering.
+        FeatureTip(
+            id: "featureTip.photoTranslation.drag",
+            anchorID: AnchorID.photoTranslationPad,
+            featureKey: "photoTranslationDrag",
+            message: "Drag the pad to move the photo",
+            targetInset: translationPadInset,
+            priority: 12,
+            showsAfterOnboarding: true
+        ),
+        FeatureTip(
+            id: "featureTip.photoTranslation.recenter",
+            anchorID: AnchorID.photoTranslationPad,
+            featureKey: "photoTranslationRecenter",
+            message: "Double-tap to re-center the photo",
+            targetInset: translationPadInset,
+            priority: 11,
             showsAfterOnboarding: true
         )
     ]

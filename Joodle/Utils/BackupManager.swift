@@ -33,7 +33,8 @@ final class BackupManager {
         dateString: entry.dateString.isEmpty ? nil : entry.dateString,
         drawingData: entry.drawingData,
         drawingThumbnail20: entry.drawingThumbnail20,
-        drawingThumbnail200: entry.drawingThumbnail200
+        drawingThumbnail200: entry.drawingThumbnail200,
+        extraDoodlesData: entry.extraDoodlesData
       )
     }
     return try JSONEncoder().encode(dtos)
@@ -111,6 +112,7 @@ final class BackupManager {
       let entry = DayEntry(body: dto.body, calendarDate: calendarDate, drawingData: dto.drawingData)
       entry.drawingThumbnail20 = dto.drawingThumbnail20
       entry.drawingThumbnail200 = dto.drawingThumbnail200
+      entry.extraDoodlesData = dto.extraDoodlesData
       context.insert(entry)
     }
 

@@ -8,10 +8,11 @@ struct AnniversaryView: View {
   var showWatermark: Bool = true
 
   private var countdownString: String {
-    return CountdownHelper.countdownText(from: Date(), to: date)
+    return CountdownHelper.countdownText(from: Date(), to: date, locale: locale)
   }
 
   @Environment(\.colorScheme) private var colorScheme
+  @Environment(\.locale) private var locale
 
   var body: some View {
     GeometryReader { geometry in

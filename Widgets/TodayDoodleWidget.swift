@@ -41,16 +41,9 @@ struct TodayDoodleProvider: TimelineProvider {
       hasPremiumAccess: hasPremiumAccess
     )
 
-    // Refresh every 15 minutes so widgets stay reasonably current for all users,
-    // or at midnight to flip to the new day — whichever comes first.
-    let calendar = Calendar.current
-    let nextMidnight = calendar.date(
-      byAdding: .day,
-      value: 1,
-      to: calendar.startOfDay(for: currentDate)
-    ) ?? currentDate
-    let fifteenMinutesLater = currentDate.addingTimeInterval(900)
-    let nextUpdate = min(nextMidnight, fifteenMinutesLater)
+    // Refresh on the next 2-hour boundary so a multi-doodle day rotates to a
+    // fresh doodle over the course of the day (capped at midnight to flip days).
+    let nextUpdate = nextDoodleRotation(after: currentDate)
 
     let timeline = Timeline(entries: [entry], policy: .after(nextUpdate))
     completion(timeline)
@@ -72,10 +65,15 @@ struct TodayDoodleProvider: TimelineProvider {
       return nil
     }
 
-    // Two-tier fallback: file-based drawing → inline UserDefaults (backward compat) → nil
-    let drawingData: Data? = entry.hasDrawing
-      ? (WidgetDataManager.shared.loadDrawingData(for: entry.dateString) ?? entry.drawingData)
-      : nil
+    // Two-tier fallback: file-based drawing → inline UserDefaults (backward compat) → nil.
+    // When the day has multiple doodles, show one of them, rotating to a fresh one
+    // every 2 hours (seeded by day + 2-hour window, matching the refresh cadence).
+    let drawingData: Data? = {
+      guard entry.hasDrawing else { return nil }
+      let index = doodleIndex(count: entry.drawingCount, date: Date())
+      return WidgetDataManager.shared.loadDrawingData(for: entry.dateString, index: index)
+        ?? entry.drawingData
+    }()
 
     return TodayDoodleData(
       dateString: entry.dateString,

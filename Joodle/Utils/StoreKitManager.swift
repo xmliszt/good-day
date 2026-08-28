@@ -196,6 +196,9 @@ class StoreKitManager: NSObject, ObservableObject {
             return String(localized: "Not entitled to access these products.")
         case .unsupported:
             return String(localized: "This device is not capable of making payments.")
+        // `StoreKitError` gains cases across SDKs; anything not listed above is
+        // caught by `@unknown default`, so don't name cases the current SDK
+        // doesn't have — that fails to compile rather than degrading gracefully.
         @unknown default:
             return String(localized: "Unexpected StoreKit error: \(error.localizedDescription)")
         }

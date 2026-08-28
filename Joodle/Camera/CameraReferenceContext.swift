@@ -103,8 +103,10 @@ final class CameraReferenceContext: ObservableObject {
   /// black-flash overlay — fakes a "shutter snap" so the capture feels
   /// instantaneous, without the latency cost of an actual shutter animation.
   @Published var captureFlashID: UUID? = nil
-  /// True from the moment the shutter is tapped until the backdrop image is
-  /// ready. Views show a spinner during this window.
+  /// True from the moment a reference is requested — shutter tap or album
+  /// import — until the backdrop image is installed and the camera session has
+  /// been torn back down. Views show a spinner during this window, and both
+  /// entry points treat it as a re-entrancy guard.
   @Published var isCapturing: Bool = false
 
   #if DEBUG
@@ -245,9 +247,16 @@ final class CameraReferenceContext: ObservableObject {
 
   func cancelLive() {
     shutter.cycle {
-      self.controller.stop()
+      // Await the stop before the mode flip unmounts the preview — a
+      // fire-and-forget stop leaves the layer detaching from a running session,
+      // which blocks the main thread and freezes the blades mid-cycle. See
+      // `CameraReferenceController.stopAndWait()`.
+      await self.controller.stopAndWait()
+      if Task.isCancelled { return }
       withAnimation(.easeInOut(duration: 0.2)) { self.mode = .idle }
-      try? await Task.sleep(nanoseconds: 300_000_000)
+      // Brief dwell so the canvas — including a tracing reference just
+      // installed by an album import — has painted before the blades retract.
+      try? await Task.sleep(nanoseconds: 80_000_000)
     }
   }
 
@@ -351,7 +360,10 @@ final class CameraReferenceContext: ObservableObject {
   }
 
   func capture() async {
-    guard mode == .live else { return }
+    // `isCapturing` doubles as the re-entrancy guard: the on-screen shutter, the
+    // volume buttons and the Camera Control click all land here, so without it a
+    // double-fire could run two full-frame Core Image renders at once.
+    guard mode == .live, !isCapturing else { return }
     captureFlashID = UUID()
     #if targetEnvironment(simulator)
     // No camera to capture from — synthesize a placeholder reference photo so
@@ -380,15 +392,24 @@ final class CameraReferenceContext: ObservableObject {
       resetBackdropTransform()
       self.backdropImage = rendered.backdrop
     }
+    // Stop the session and WAIT before flipping the mode: that flip unmounts
+    // the live preview, and detaching the preview layer from a still-running
+    // session blocks the main thread on the capture render server — landing on
+    // the exact commit that would have revealed the backdrop, so the canvas sat
+    // frozen on the last camera frame for as long as the teardown took. The
+    // spinner stays up across the wait rather than the UI just looking stuck.
+    await controller.stopAndWait()
     isCapturing = false
-    // Saving the filtered copy is a pure background job that must never gate
-    // the backdrop appearing — it reuses the square already rendered above. The
-    // toggle is the single source of truth: ON means "ensure access" — so the
-    // save path requests add-only permission, prompting the first time (even
-    // when no frame was captured, `square` is nil but the request still fires).
-    // If access is denied, the save is impossible, so flip the toggle OFF to
-    // record the user's deliberate choice (no future prompts) and surface a
-    // one-shot message.
+    withAnimation(.easeInOut(duration: 0.2)) { self.mode = .idle }
+    // Album copy goes last. It's a pure background job that must never gate the
+    // backdrop appearing, and it reuses the square already rendered above — but
+    // kicking it off any earlier put its grade + encode in contention with the
+    // session teardown and the reveal commit. The toggle is the single source of
+    // truth: ON means "ensure access" — so the save path requests add-only
+    // permission, prompting the first time (even when no frame was captured,
+    // `square` is nil but the request still fires). If access is denied, the
+    // save is impossible, so flip the toggle OFF to record the user's deliberate
+    // choice (no future prompts) and surface a one-shot message.
     if shouldSave {
       controller.saveCapturedPhoto(from: rendered?.square) { [weak self] in
         Task { @MainActor in
@@ -398,9 +419,31 @@ final class CameraReferenceContext: ObservableObject {
         }
       }
     }
-    self.controller.stop()
-    withAnimation(.easeInOut(duration: 0.2)) { self.mode = .idle }
     #endif
+  }
+
+  /// Installs a photo picked from the user's album as the tracing reference.
+  ///
+  /// `loadData` is awaited with the spinner already up, because it can be slow
+  /// in ways the app can't bound — for an optimised-storage library it pulls the
+  /// original down from iCloud — and the import previously showed no feedback at
+  /// all while it ran. The decode then happens off the main thread. Mirrors
+  /// `capture()` from there: the transform resets so a fresh reference starts
+  /// centred, and the shutter cycles back out of camera mode.
+  func importReference(loadData: () async -> Data?) async {
+    guard !isCapturing else { return }
+    isCapturing = true
+    let data = await loadData()
+    let reference = await ReferencePhotoImporter.squareReference(from: data)
+    isCapturing = false
+    // Bail if we're no longer live — the exit-camera button stays enabled
+    // throughout (blocking the only way out of a slow iCloud fetch would be
+    // worse), so a user who backed out mustn't have the photo land anyway, nor
+    // a second shutter cycle run over the canvas they returned to.
+    guard mode == .live, let reference else { return }
+    resetBackdropTransform()
+    backdropImage = reference
+    cancelLive()
   }
 
   #if targetEnvironment(simulator)
