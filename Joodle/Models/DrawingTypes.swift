@@ -37,3 +37,33 @@ struct PathData: Codable {
     case isDot
   }
 }
+
+extension PathData {
+  /// Rebuilds the drawable `Path` this stroke encodes — a dot becomes an
+  /// ellipse of the stroke width, anything else a polyline. Mirrors the decode
+  /// in `DrawingPathCache`, for callers that produce strokes in memory rather
+  /// than loading them from `drawingData`.
+  func makePath() -> Path {
+    var path = Path()
+    // A lone point is a dot whether or not the flag says so — that's how the
+    // stored format has always been read back.
+    let isSingleDot = isDot || points.count == 1
+
+    if isSingleDot, let center = points.first {
+      let radius = DRAWING_LINE_WIDTH / 2
+      path.addEllipse(
+        in: CGRect(
+          x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2))
+      return path
+    }
+
+    for (index, point) in points.enumerated() {
+      if index == 0 {
+        path.move(to: point)
+      } else {
+        path.addLine(to: point)
+      }
+    }
+    return path
+  }
+}

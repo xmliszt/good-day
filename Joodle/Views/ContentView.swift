@@ -776,6 +776,7 @@ struct ContentView: View {
       // zooms in.
       VStack {
         Spacer()
+        VStack(spacing: TraceControl.dialSpacing) {
         ZStack {
           PhotoRotationDial(
             rotation: cameraContext.backdropRotation,
@@ -802,6 +803,20 @@ struct ContentView: View {
             FeatureTipDefinitions.AnchorID.photoTranslationPad,
             isEnabled: showPhotoAdjust && cameraContext.backdropTranslationRange > 0,
             resolution: .touch)
+        }
+
+        // Auto-trace: converts the reference photo, exactly as framed above,
+        // into stroke data. Docked flush under the dial so the action and the
+        // positioning controls read as one console — the photo is positioned
+        // and then traced without the eye leaving the panel.
+        TraceControl(
+          detail: Binding(
+            get: { cameraContext.autoTraceDetail },
+            set: { cameraContext.autoTraceDetail = $0 }
+          ),
+          isTracing: cameraContext.isAutoTracing,
+          onTrace: { level in cameraContext.requestAutoTrace(detail: level) }
+        )
         }
         // Lifts the panel off whatever it floats over — its black plate would
         // otherwise merge into the dark backdrop behind the canvas.
