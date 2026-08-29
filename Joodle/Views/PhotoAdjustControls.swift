@@ -89,7 +89,7 @@ struct PhotoTranslationPad: View {
 
   // Shrunk from its solo size so the rotation dial's band has room to wrap the
   // pad's perimeter without growing the overall footprint much.
-  private static let padSide: CGFloat = 160
+  private static let padSide: CGFloat = 120
   private static let containerPadding: CGFloat = 14
   /// Full square footprint of the pad including its container padding — shared
   /// with `PhotoRotationDial` so its band can wrap concentrically around the pad.
@@ -302,8 +302,8 @@ struct PhotoRotationDial: View {
   /// Width of the exposed ring around the pad.
   var bandWidth: CGFloat = PhotoRotationDial.defaultBandWidth
 
-  /// Default band width, exposed so siblings docking against the dial (e.g.
-  /// `TraceControl`) can line their own width up with the dial's outer edge.
+  /// Default band width, exposed so siblings docking against the dial can line
+  /// their own width up with the dial's outer edge.
   static let defaultBandWidth: CGFloat = 20
 
   /// Corner radius of the pad container — the band's inner contour matches it so

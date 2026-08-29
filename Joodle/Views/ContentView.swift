@@ -98,6 +98,17 @@ struct ContentView: View {
   @State private var tempZoomReveal: CGFloat = 0
   @State private var tempZoomCommitted: Bool = false
 
+  /// On-screen bottom edge (global Y) of the expanded floating canvas container,
+  /// published by `DynamicIslandExpandedView`. The photo-adjust console keeps at
+  /// least 24pt below it.
+  @State private var canvasContainerBottomY: CGFloat = 0
+
+  /// Transient override for the auto-trace button's corner. `nil` follows the
+  /// handedness preference; a press dragged across the screen flips it to the
+  /// opposite corner for the session. Reset when a new reference photo appears,
+  /// so the button always returns to the handedness side (JOO relocate spec).
+  @State private var autoTraceCornerOverride: AutoTraceButton.Corner?
+
   private let headerHeight: CGFloat = 100.0
 
   // Hit testing optimization (O(1) lookup)
@@ -767,16 +778,19 @@ struct ContentView: View {
       // Same emergence as the live-camera ruler above.
       .animation(.spring(response: 0.32, dampingFraction: 0.74), value: showPhotoAdjust)
 
-      // Native-Camera-style 2-axis translation pad wrapped by the rotation
-      // dial, centered above the bottom edge. The dial is a polaroid-style bezel
-      // that hugs the pad's perimeter and sits z-behind it, so only the ring
-      // around the pad is exposed for turning. Travel bound tracks zoom +
-      // rotation: zero at 1× (the photo exactly covers the canvas, so there's
-      // nothing to reveal), opening up to the photo's own edges as the user
-      // zooms in.
-      VStack {
-        Spacer()
-        VStack(spacing: TraceControl.dialSpacing) {
+      // Native-Camera-style 2-axis translation pad wrapped by the rotation dial.
+      // The dial is a polaroid-style bezel that hugs the pad's perimeter and sits
+      // z-behind it, so only the ring around the pad is exposed for turning.
+      // Vertically it sits centered with the edge zoom ruler, but never within
+      // 24pt of the floating canvas's bottom — on a short device a tall canvas
+      // takes priority and pushes the console down out of that alignment.
+      GeometryReader { geo in
+        let consoleSide = PhotoTranslationPad.containerSide + PhotoRotationDial.defaultBandWidth * 2
+        // Zoom ruler is `tabHeight` tall, bottom-anchored 80pt above the edge.
+        let zoomCenterY = geo.size.height - (80 + CameraZoomSlider.tabHeight / 2)
+        // Floor: keep the whole console at least 24pt below the canvas container.
+        let minCenterY = canvasContainerBottomY + 24 + consoleSide / 2
+        let centerY = max(zoomCenterY, minCenterY)
         ZStack {
           PhotoRotationDial(
             rotation: cameraContext.backdropRotation,
@@ -804,26 +818,42 @@ struct ContentView: View {
             isEnabled: showPhotoAdjust && cameraContext.backdropTranslationRange > 0,
             resolution: .touch)
         }
-
-        // Auto-trace: converts the reference photo, exactly as framed above,
-        // into stroke data. Docked flush under the dial so the action and the
-        // positioning controls read as one console — the photo is positioned
-        // and then traced without the eye leaving the panel.
-        TraceControl(
-          detail: Binding(
-            get: { cameraContext.autoTraceDetail },
-            set: { cameraContext.autoTraceDetail = $0 }
-          ),
-          isTracing: cameraContext.isAutoTracing,
-          onTrace: { level in cameraContext.requestAutoTrace(detail: level) }
-        )
-        }
         // Lifts the panel off whatever it floats over — its black plate would
         // otherwise merge into the dark backdrop behind the canvas.
         .shadow(color: .black.opacity(0.35), radius: 20, y: 10)
-        .padding(.bottom, 24)
+        .position(x: geo.size.width / 2, y: centerY)
       }
-      .ignoresSafeArea(.container, edges: .bottom)
+      .ignoresSafeArea()
+      .opacity(showPhotoAdjust ? 1 : 0)
+      .allowsHitTesting(showPhotoAdjust)
+      .animation(.easeInOut(duration: 0.25), value: showPhotoAdjust)
+
+      // Auto-trace: a standalone Liquid Glass button docked in the handedness
+      // corner. Tap traces at the default detail; long-press blooms a fan of
+      // three detail levels to swipe through; a press dragged across the screen
+      // flings it to the opposite corner for the session. Seated so its center
+      // sits at the screen's corner-arc center — concentric with the rounded
+      // corner, and thus equidistant from the two edges it hugs.
+      GeometryReader { geo in
+        let handednessCorner: AutoTraceButton.Corner =
+          userPreferences.cameraZoomSliderHandedness == .right ? .bottomTrailing : .bottomLeading
+        let resolvedCorner = autoTraceCornerOverride ?? handednessCorner
+        let inset = UIScreen.joodleDisplayCornerRadius
+        AutoTraceButton(
+          corner: resolvedCorner,
+          defaultDetail: .default,
+          isTracing: cameraContext.isAutoTracing,
+          onTrace: { level in cameraContext.requestAutoTrace(detail: level) },
+          onRelocate: { newCorner in autoTraceCornerOverride = newCorner },
+          screenWidth: geo.size.width
+        )
+        .position(
+          x: resolvedCorner == .bottomTrailing ? geo.size.width - inset : inset,
+          y: geo.size.height - inset
+        )
+        .animation(.spring(response: 0.42, dampingFraction: 0.78), value: resolvedCorner)
+      }
+      .ignoresSafeArea()
       .opacity(showPhotoAdjust ? 1 : 0)
       .allowsHitTesting(showPhotoAdjust)
       .animation(.easeInOut(duration: 0.25), value: showPhotoAdjust)
@@ -843,6 +873,16 @@ struct ContentView: View {
         .zIndex(51)
         .transition(.move(edge: .bottom).combined(with: .opacity))
       }
+    }
+    // A fresh reference photo returns the auto-trace button to the handedness
+    // side — a prior across-the-screen relocation lasts only that session.
+    .onChange(of: cameraContext.backdropImage) { _, _ in
+      autoTraceCornerOverride = nil
+    }
+    // Track the floating canvas's bottom edge so the photo-adjust console can
+    // stay clear of it.
+    .onPreferenceChange(DIContainerFramePreferenceKey.self) { frame in
+      canvasContainerBottomY = frame.maxY
     }
     .postHogScreenView("Home")
     .alert("Subscription Ended", isPresented: $subscriptionManager.subscriptionJustExpired) {

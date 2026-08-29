@@ -7,6 +7,17 @@
 
 import SwiftUI
 
+/// Global frame of the expanded floating container, published up the view tree so
+/// siblings (e.g. the photo-adjust console) can keep clear of its bottom edge.
+/// `.zero` while collapsed.
+struct DIContainerFramePreferenceKey: PreferenceKey {
+  static var defaultValue: CGRect = .zero
+  static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
+    let next = nextValue()
+    if next != .zero { value = next }
+  }
+}
+
 // MARK: - Tunable configuration
 //
 // All of `DynamicIslandExpandedView`'s tweakable knobs in one place — the open
@@ -420,6 +431,16 @@ struct DynamicIslandExpandedView<Content: View>: View {
         // Black at the top to blend into the dynamic island cutout, fading
         // into clear refractive glass toward the bottom when expanded.
         .background(containerBackground)
+        // Publish the visible container's on-screen frame so siblings can dodge
+        // its bottom edge. `.zero` while collapsed, so consumers ignore it then.
+        .background(
+          GeometryReader { proxy in
+            Color.clear.preference(
+              key: DIContainerFramePreferenceKey.self,
+              value: isExpanded ? proxy.frame(in: .global) : .zero
+            )
+          }
+        )
         // Corner radius matches border of the device
         .clipShape(containerShape)
         // Rim light along the clipped edge — drawn above the clip so the
