@@ -79,28 +79,52 @@ enum AutoTraceEngine {
   static func trace(_ request: AutoTraceRequest, canvasSize: CGFloat = CANVAS_SIZE) async
     -> AutoTraceOutcome
   {
+    await trace(request, config: AutoTraceConfig(detail: request.detail), canvasSize: canvasSize)
+  }
+
+  /// Runs the pipeline with an explicit, free-form config rather than one of the
+  /// three presets. `request.detail` is ignored — the config carries every knob.
+  /// The debug Auto-Trace Lab drives this; the preset entry point above funnels
+  /// into it via `AutoTraceConfig(detail:)`.
+  static func trace(
+    _ request: AutoTraceRequest, config: AutoTraceConfig, canvasSize: CGFloat = CANVAS_SIZE
+  ) async -> AutoTraceOutcome {
     let image = request.image
     let zoom = request.zoom
     let rotation = request.rotation
     let offset = request.offset
-    let detail = request.detail
 
     return await Task.detached(priority: .userInitiated) { () -> AutoTraceOutcome in
       guard
         let flattened = AutoTraceFlattener.flatten(
-          image: image, zoom: zoom, rotation: rotation, offset: offset, canvasSize: canvasSize)
+          image: image, zoom: zoom, rotation: rotation, offset: offset, canvasSize: canvasSize,
+          side: CGFloat(config.renderSide))
       else {
         return AutoTraceOutcome(strokes: [], usedSubjectIsolation: false)
       }
 
-      let isolated = isolateSubject(in: flattened)
-      let conditioned = condition(isolated.image) ?? isolated.image
-      let contours = detectContours(in: conditioned, detail: detail, canvasSize: canvasSize)
+      let isolated = config.useSubjectIsolation ? isolateSubject(in: flattened) : (flattened, false)
+      let preprocessed = preprocess(isolated.0, config: config) ?? isolated.0
+      let contours = detectContours(in: preprocessed, config: config, canvasSize: canvasSize)
       let strokes = AutoTraceVectorizer.vectorize(
-        contours: contours, detail: detail, canvasSize: canvasSize)
+        contours: contours, config: config, canvasSize: canvasSize)
 
-      return AutoTraceOutcome(strokes: strokes, usedSubjectIsolation: isolated.didIsolate)
+      return AutoTraceOutcome(strokes: strokes, usedSubjectIsolation: isolated.1)
     }.value
+  }
+
+  // MARK: - Preprocessing
+
+  /// The image handed to the contour pass. For `.none` this is the desaturated,
+  /// blurred photo (silhouette tracing); for the edge methods it is a binary
+  /// edge map (dark lines on white) so interior lines are traced too.
+  static func preprocess(_ image: CGImage, config: AutoTraceConfig) -> CGImage? {
+    switch config.edgeMethod {
+    case .none:
+      return condition(image, config: config)
+    case .canny, .sobel, .lineOverlay:
+      return AutoTraceEdges.edgeMap(image, config: config)
+    }
   }
 
   // MARK: - Subject isolation (optional)
@@ -151,18 +175,18 @@ enum AutoTraceEngine {
   /// Desaturates and softens the image before contour detection. The blur is the
   /// important part: without it, fabric weave, skin texture and sensor noise all
   /// register as contours and bury the subject's actual outline.
-  static func condition(_ image: CGImage) -> CGImage? {
+  static func condition(_ image: CGImage, config: AutoTraceConfig) -> CGImage? {
     let source = CIImage(cgImage: image)
 
     let mono = CIFilter.colorControls()
     mono.inputImage = source
-    mono.saturation = 0
-    mono.contrast = 1.1
+    mono.saturation = Float(config.conditionSaturation)
+    mono.contrast = Float(config.conditionContrast)
     guard let desaturated = mono.outputImage else { return nil }
 
     let blur = CIFilter.gaussianBlur()
     blur.inputImage = desaturated
-    blur.radius = 1.5
+    blur.radius = Float(config.blurRadius)
     guard let blurred = blur.outputImage else { return nil }
 
     // Blurring grows the extent; crop back so coordinates stay normalized
@@ -173,12 +197,12 @@ enum AutoTraceEngine {
   // MARK: - Contour detection
 
   static func detectContours(
-    in image: CGImage, detail: AutoTraceDetail, canvasSize: CGFloat = CANVAS_SIZE
+    in image: CGImage, config: AutoTraceConfig, canvasSize: CGFloat = CANVAS_SIZE
   ) -> [AutoTraceContour] {
     let request = VNDetectContoursRequest()
-    request.contrastAdjustment = detail.contrastAdjustment
+    request.contrastAdjustment = Float(config.contrastAdjustment)
     request.detectsDarkOnLight = true
-    request.maximumImageDimension = Int(AutoTraceFlattener.renderSide)
+    request.maximumImageDimension = Int(config.renderSide)
 
     let handler = VNImageRequestHandler(cgImage: image, options: [:])
     do {
@@ -192,7 +216,7 @@ enum AutoTraceEngine {
     var collected: [AutoTraceContour] = []
     for contour in observation.topLevelContours {
       collect(
-        contour, depth: 0, maxDepth: detail.childDepth, epsilon: detail.polygonEpsilon,
+        contour, depth: 0, maxDepth: config.childDepth, epsilon: Float(config.polygonEpsilon),
         canvasSize: canvasSize, into: &collected)
     }
     return collected
@@ -239,3 +263,117 @@ enum AutoTraceEngine {
     }
   }
 }
+
+#if DEBUG
+
+/// One captured intermediate from a trace, for the Auto-Trace Lab's step-by-step
+/// view. `@unchecked Sendable` so the whole result can cross the detached-task
+/// boundary — `UIImage` is safe to read across threads once built.
+struct AutoTraceStage: Identifiable, @unchecked Sendable {
+  let id = UUID()
+  let title: String
+  let subtitle: String
+  let image: UIImage
+}
+
+struct AutoTraceDebugResult: @unchecked Sendable {
+  let outcome: AutoTraceOutcome
+  let stages: [AutoTraceStage]
+}
+
+extension AutoTraceEngine {
+
+  /// Re-runs the pipeline capturing every intermediate as an image, so the lab
+  /// can show what each step produced. Reuses the exact primitives `trace`
+  /// uses — only the orchestration differs, to snapshot between steps.
+  static func debugStages(
+    _ request: AutoTraceRequest, config: AutoTraceConfig, canvasSize: CGFloat = CANVAS_SIZE
+  ) -> AutoTraceDebugResult {
+    var stages: [AutoTraceStage] = []
+
+    guard
+      let flattened = AutoTraceFlattener.flatten(
+        image: request.image, zoom: request.zoom, rotation: request.rotation,
+        offset: request.offset, canvasSize: canvasSize, side: CGFloat(config.renderSide))
+    else {
+      return AutoTraceDebugResult(
+        outcome: AutoTraceOutcome(strokes: [], usedSubjectIsolation: false), stages: stages)
+    }
+    stages.append(
+      AutoTraceStage(
+        title: "Flattened", subtitle: "WYSIWYG crop → \(Int(config.renderSide))px",
+        image: UIImage(cgImage: flattened)))
+
+    let isolated = config.useSubjectIsolation ? isolateSubject(in: flattened) : (flattened, false)
+    stages.append(
+      AutoTraceStage(
+        title: "Subject", subtitle: isolated.1 ? "isolated" : "not isolated",
+        image: UIImage(cgImage: isolated.0)))
+
+    // Preprocessing — the step that differs by edge method.
+    if config.edgeMethod == .none {
+      if let conditioned = condition(isolated.0, config: config) {
+        stages.append(
+          AutoTraceStage(
+            title: "Conditioned", subtitle: "desaturate + blur \(String(format: "%.1f", config.blurRadius))",
+            image: UIImage(cgImage: conditioned)))
+      }
+    } else {
+      if let raw = AutoTraceEdges.rawEdges(isolated.0, config: config) {
+        stages.append(
+          AutoTraceStage(
+            title: "Raw edges", subtitle: config.edgeMethod.title,
+            image: UIImage(cgImage: raw)))
+      }
+      if let map = AutoTraceEdges.edgeMap(isolated.0, config: config) {
+        stages.append(
+          AutoTraceStage(
+            title: "Edge map", subtitle: "binarized · dark-on-white",
+            image: UIImage(cgImage: map)))
+      }
+    }
+
+    let preprocessed = preprocess(isolated.0, config: config) ?? isolated.0
+    let contours = detectContours(in: preprocessed, config: config, canvasSize: canvasSize)
+    let strokes = AutoTraceVectorizer.vectorize(
+      contours: contours, config: config, canvasSize: canvasSize)
+
+    stages.append(
+      AutoTraceStage(
+        title: "Contours", subtitle: "\(contours.count) found",
+        image: rasterizeStrokes(strokes, side: CGFloat(config.renderSide), canvasSize: canvasSize)))
+
+    return AutoTraceDebugResult(
+      outcome: AutoTraceOutcome(strokes: strokes, usedSubjectIsolation: isolated.1), stages: stages)
+  }
+
+  /// Draws stroke data (canvas coordinates) onto white as a preview thumbnail.
+  private static func rasterizeStrokes(
+    _ strokes: [PathData], side: CGFloat, canvasSize: CGFloat
+  ) -> UIImage {
+    let format = UIGraphicsImageRendererFormat()
+    format.scale = 1
+    format.opaque = true
+    let renderer = UIGraphicsImageRenderer(size: CGSize(width: side, height: side), format: format)
+    let scale = side / canvasSize
+    return renderer.image { ctx in
+      let cg = ctx.cgContext
+      cg.setFillColor(UIColor.white.cgColor)
+      cg.fill(CGRect(x: 0, y: 0, width: side, height: side))
+      cg.setStrokeColor(UIColor.label.cgColor)
+      cg.setLineWidth(max(DRAWING_LINE_WIDTH * scale, 1))
+      cg.setLineCap(.round)
+      cg.setLineJoin(.round)
+      for stroke in strokes {
+        let points = stroke.points.map { CGPoint(x: $0.x * scale, y: $0.y * scale) }
+        guard let first = points.first else { continue }
+        cg.beginPath()
+        cg.move(to: first)
+        for point in points.dropFirst() { cg.addLine(to: point) }
+        cg.strokePath()
+      }
+    }
+  }
+}
+
+#endif

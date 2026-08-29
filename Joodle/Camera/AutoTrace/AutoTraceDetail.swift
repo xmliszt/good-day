@@ -56,7 +56,7 @@ enum AutoTraceDetail: Int, CaseIterable, Identifiable, Equatable {
   var polygonEpsilon: Float {
     switch self {
     case .simple: return 0.006
-    case .balanced: return 0.003
+    case .balanced: return 0.0039
     case .detailed: return 0.0015
     }
   }
@@ -67,8 +67,8 @@ enum AutoTraceDetail: Int, CaseIterable, Identifiable, Equatable {
   /// faceted polygon is how close together we put the points.
   var resampleSpacing: CGFloat {
     switch self {
-    case .simple: return 4.0
-    case .balanced: return 2.5
+    case .simple: return 10.0
+    case .balanced: return 8.0
     case .detailed: return 1.8
     }
   }
@@ -81,7 +81,7 @@ enum AutoTraceDetail: Int, CaseIterable, Identifiable, Equatable {
   var minPerimeterFraction: CGFloat {
     switch self {
     case .simple: return 0.06
-    case .balanced: return 0.025
+    case .balanced: return 0.022
     case .detailed: return 0.012
     }
   }
@@ -92,19 +92,19 @@ enum AutoTraceDetail: Int, CaseIterable, Identifiable, Equatable {
   var maxStrokes: Int {
     switch self {
     case .simple: return 40
-    case .balanced: return 120
+    case .balanced: return 60
     case .detailed: return 200
     }
   }
 
   /// Hard ceiling on total emitted points across all strokes. This is the
   /// number that keeps `DayEntry.drawingData` — which is JSON, and is mirrored
-  /// into the widget app group — from bloating: roughly 13 bytes per point once
-  /// coordinates are rounded, so 3800 points is about 49KB.
+  /// into the widget app group — from bloating: roughly 9 bytes per point once
+  /// coordinates are rounded to integers, so 700 points is about 6KB.
   var maxPoints: Int {
     switch self {
-    case .simple: return 900
-    case .balanced: return 2500
+    case .simple: return 450
+    case .balanced: return 700
     case .detailed: return 3800
     }
   }

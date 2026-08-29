@@ -281,6 +281,16 @@ struct DeveloperOptionsView: View {
         row(icon: "camera.filters", color: .pink, title: "Photo Filter Lab")
       }
 
+      // TEMPORARY: auto-trace tuning workbench. Remove once the trace presets
+      // are dialed in and the chosen values are committed to AutoTraceDetail.
+      NavigationLink {
+        AutoTraceLab()
+          .navigationTitle(Text(verbatim: "Auto-Trace Lab"))
+          .navigationBarTitleDisplayMode(.inline)
+      } label: {
+        row(icon: "scribble.variable", color: .purple, title: "Auto-Trace Lab")
+      }
+
       Button {
         showDataSeeder = true
       } label: {

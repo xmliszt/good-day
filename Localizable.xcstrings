@@ -771,211 +771,6 @@
         }
       }
     },
-    "Auto-trace" : {
-      "comment" : "Accessibility label for the control that converts the reference photo into a doodle.",
-      "localizations" : {
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Tracé auto"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "自動トレース"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "자동 따라 그리기"
-          }
-        },
-        "tr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Otomatik çizim"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "自动描摹"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "自動描摹"
-          }
-        }
-      }
-    },
-    "Balanced" : {
-      "comment" : "Auto-trace detail level: the middle amount of detail.",
-      "localizations" : {
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Équilibré"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "標準"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "균형"
-          }
-        },
-        "tr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Dengeli"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "均衡"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "均衡"
-          }
-        }
-      }
-    },
-    "Joodle couldn't find clear shapes in this photo. Try moving closer, adding light, or picking a subject that stands out from its background." : {
-      "comment" : "Alert body shown when auto-trace found no usable shapes in the photo.",
-      "localizations" : {
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Joodle n'a pas trouvé de formes nettes dans cette photo. Rapprochez-vous, ajoutez de la lumière ou choisissez un sujet qui se détache de l'arrière-plan."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "この写真からはっきりした形を見つけられませんでした。被写体に近づく、明るくする、背景から際立つ被写体を選ぶ、などをお試しください。"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "이 사진에서 뚜렷한 형태를 찾지 못했어요. 더 가까이에서 찍거나, 조명을 밝게 하거나, 배경과 뚜렷이 구분되는 피사체를 골라 보세요."
-          }
-        },
-        "tr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Joodle bu fotoğrafta belirgin şekiller bulamadı. Daha yakından çekmeyi, ışığı artırmayı ya da arka plandan ayrışan bir özne seçmeyi deneyin."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Joodle 没能在这张照片里找到清晰的形状。可以试试靠近一些、增加光线，或选择与背景对比更明显的主体。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Joodle 沒能在這張照片裡找到清晰的形狀。可以試試靠近一些、增加光線，或選擇與背景對比更明顯的主體。"
-          }
-        }
-      }
-    },
-    "Nothing to Trace" : {
-      "comment" : "Alert title shown when auto-trace found no usable shapes in the photo.",
-      "localizations" : {
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Rien à tracer"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "トレースできません"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "따라 그릴 것이 없음"
-          }
-        },
-        "tr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Çizilecek bir şey yok"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "无可描摹内容"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "無可描摹內容"
-          }
-        }
-      }
-    },
-    "Simple" : {
-      "comment" : "Auto-trace detail level: the fewest lines.",
-      "localizations" : {
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Simple"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "シンプル"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "단순"
-          }
-        },
-        "tr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Basit"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "简单"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "簡單"
-          }
-        }
-      }
-    },
     "•" : {
       "comment" : "A bullet point symbol.",
       "isCommentAutoGenerated" : true,
@@ -2909,6 +2704,47 @@
         }
       }
     },
+    "Auto-trace" : {
+      "comment" : "Button that converts the reference photo into a doodle",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tracé auto"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自動トレース"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "자동 따라 그리기"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Otomatik çizim"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自动描摹"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自動描摹"
+          }
+        }
+      }
+    },
     "Automatic iCloud Backup" : {
       "comment" : "A toggle that enables automatic iCloud backups of your Joodle entries.",
       "isCommentAutoGenerated" : true,
@@ -3075,6 +2911,47 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已儲存備份"
+          }
+        }
+      }
+    },
+    "Balanced" : {
+      "comment" : "Auto-trace detail level: the middle amount of detail.",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Équilibré"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "標準"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "균형"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dengeli"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "均衡"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "均衡"
           }
         }
       }
@@ -11980,6 +11857,47 @@
         }
       }
     },
+    "Joodle couldn't find clear shapes in this photo. Try moving closer, adding light, or picking a subject that stands out from its background." : {
+      "comment" : "Alert body shown when auto-trace found no usable shapes in the photo.",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Joodle n'a pas trouvé de formes nettes dans cette photo. Rapprochez-vous, ajoutez de la lumière ou choisissez un sujet qui se détache de l'arrière-plan."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この写真からはっきりした形を見つけられませんでした。被写体に近づく、明るくする、背景から際立つ被写体を選ぶ、などをお試しください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이 사진에서 뚜렷한 형태를 찾지 못했어요. 더 가까이에서 찍거나, 조명을 밝게 하거나, 배경과 뚜렷이 구분되는 피사체를 골라 보세요."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Joodle bu fotoğrafta belirgin şekiller bulamadı. Daha yakından çekmeyi, ışığı artırmayı ya da arka plandan ayrışan bir özne seçmeyi deneyin."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Joodle 没能在这张照片里找到清晰的形状。可以试试靠近一些、增加光线，或选择与背景对比更明显的主体。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Joodle 沒能在這張照片裡找到清晰的形狀。可以試試靠近一些、增加光線，或選擇與背景對比更明顯的主體。"
+          }
+        }
+      }
+    },
     "Joodle couldn't save this reference photo to your album. To turn saving back on, go to Settings > General > Customization > Save photos to album." : {
       "localizations" : {
         "fr" : {
@@ -16393,6 +16311,47 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "無需取消任何東西"
+          }
+        }
+      }
+    },
+    "Nothing to Trace" : {
+      "comment" : "Alert title shown when auto-trace found no usable shapes in the photo.",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rien à tracer"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "トレースできません"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "따라 그릴 것이 없음"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Çizilecek bir şey yok"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无可描摹内容"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無可描摹內容"
           }
         }
       }
@@ -21322,6 +21281,47 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "在背景中顯示整天逐漸下降的動態水位。水位會隨裝置傾斜而變化。"
+          }
+        }
+      }
+    },
+    "Simple" : {
+      "comment" : "Auto-trace detail level: the fewest lines.",
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Simple"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "シンプル"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "단순"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Basit"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "简单"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "簡單"
           }
         }
       }

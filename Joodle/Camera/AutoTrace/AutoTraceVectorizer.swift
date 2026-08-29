@@ -40,11 +40,14 @@ enum AutoTraceVectorizer {
   /// How close to an edge counts as being on it, in canvas points.
   static let borderTolerance: CGFloat = 1.0
 
-  /// Coordinates are rounded to this many decimal places before encoding. The
-  /// canvas is 342pt and the smallest place a doodle is ever drawn is a 26pt
-  /// grid cell, so tenths are far below the visible threshold — but they cut
-  /// the JSON roughly in half versus full Double precision.
-  private static let coordinateDecimals: CGFloat = 10
+  /// Coordinates are snapped to the nearest `1 / coordinateDecimals` of a point
+  /// before encoding. The canvas is 342pt and the smallest place a doodle is
+  /// ever drawn is a 26pt grid cell (a ~13× downscale), so integer precision —
+  /// a ±0.5pt error that maps to ±0.04pt on the grid — is invisible, and drops
+  /// the decimal digit from every coordinate, shrinking the JSON further than
+  /// any fractional rounding could (tenths and halves both still encode a
+  /// decimal place).
+  private static let coordinateDecimals: CGFloat = 1
 
   // MARK: - Entry point
 
@@ -59,12 +62,22 @@ enum AutoTraceVectorizer {
     detail: AutoTraceDetail,
     canvasSize: CGFloat
   ) -> [PathData] {
-    let minPerimeter = detail.minPerimeterFraction * canvasSize * 4
+    vectorize(contours: contours, config: AutoTraceConfig(detail: detail), canvasSize: canvasSize)
+  }
+
+  /// Config-driven vectorization. The preset overload above funnels into this
+  /// via `AutoTraceConfig(detail:)`, so both paths share one implementation.
+  static func vectorize(
+    contours: [AutoTraceContour],
+    config: AutoTraceConfig,
+    canvasSize: CGFloat
+  ) -> [PathData] {
+    let minPerimeter = CGFloat(config.minPerimeterFraction) * canvasSize * 4
 
     // Map into canvas space and cull noise in one pass.
     let candidates: [(points: [CGPoint], perimeter: CGFloat)] =
       contours.compactMap { contour in
-        guard contour.depth <= detail.childDepth else { return nil }
+        guard contour.depth <= config.childDepth else { return nil }
         let points = canvasPoints(fromNormalized: contour.normalizedPoints, canvasSize: canvasSize)
         guard points.count >= 2 else { return nil }
         guard !isImageBorder(points, canvasSize: canvasSize) else { return nil }
@@ -77,13 +90,14 @@ enum AutoTraceVectorizer {
     let ranked = candidates.sorted { $0.perimeter > $1.perimeter }
 
     var strokes: [PathData] = []
-    var pointBudget = detail.maxPoints
+    var pointBudget = config.maxPoints
 
     for candidate in ranked {
-      guard strokes.count < detail.maxStrokes else { break }
+      guard strokes.count < config.maxStrokes else { break }
       guard pointBudget >= minimumPointsPerStroke else { break }
 
-      var resampled = resample(closedLoop: candidate.points, spacing: detail.resampleSpacing)
+      var resampled = resample(
+        closedLoop: candidate.points, spacing: CGFloat(config.resampleSpacing))
       guard resampled.count >= minimumPointsPerStroke else { continue }
 
       // Never let a single contour eat the whole remaining budget mid-shape —
