@@ -96,6 +96,7 @@ iOSInjectionProject/
 .DS_Store
 
 .cursor
+.codex
 
 buildServer.json
 
