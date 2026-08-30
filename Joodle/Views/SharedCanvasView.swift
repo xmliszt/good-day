@@ -1366,7 +1366,7 @@ private struct SimulatorCameraPlaceholder: View {
     // At the minimum zoom the photo fills the square (its center crop); higher
     // zoom magnifies around center, matching what `capture()` crops out.
     let minZoom = CameraReferenceContext.simulatorZoomCapabilities.minDisplayZoom
-    Image("SimulatorCameraReference")
+    Image("AutoTraceSample")
       .resizable()
       .scaledToFill()
       .scaleEffect(zoomFactor / minZoom)

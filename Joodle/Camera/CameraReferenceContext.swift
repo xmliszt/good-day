@@ -551,7 +551,7 @@ final class CameraReferenceContext: ObservableObject {
   /// same framing the user sees. Mirrors `SimulatorCameraPlaceholder`: the
   /// square shrinks (magnifying the center) as zoom climbs above the minimum.
   static func makeSimulatorPlaceholderImage(zoom: CGFloat) -> UIImage {
-    guard let source = UIImage(named: "SimulatorCameraReference"),
+    guard let source = UIImage(named: "AutoTraceSample"),
           let cgImage = source.cgImage else {
       return UIImage()
     }
