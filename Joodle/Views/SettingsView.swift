@@ -639,9 +639,19 @@ struct SettingsView: View {
       if subscriptionManager.hasPremiumAccess {
         NavigationLink {
           AutoTraceSettingsView()
+            // Navigating in resolves the tip. Done here rather than via a `.tap`
+            // resolution because a tap gesture on the row competes with the
+            // NavigationLink's own hit testing (see FeatureTipAnchorModifier),
+            // leaving the row not fully tappable.
+            .onAppear {
+              FeatureTipManager.shared.markSeen(FeatureTipDefinitions.TipID.autoTraceSettingsRow)
+            }
         } label: {
           autoTraceRowLabel
         }
+        // Frame-reporting only (`.none`) — the row stays fully tappable; the tip
+        // is Pro-only so only this branch carries it.
+        .featureTip(FeatureTipDefinitions.AnchorID.autoTraceSettingsRow, resolution: .none)
       } else {
         Button {
           paywallSource = "auto_trace"
@@ -717,7 +727,7 @@ struct SettingsView: View {
   @ViewBuilder
   private var autoTraceRowLabel: some View {
     HStack {
-      SettingsIconView(systemName: "wand.and.stars", backgroundColor: .pink)
+      SettingsIconView(systemName: "lasso.badge.sparkles", backgroundColor: .pink)
       Text("Auto Trace")
         .foregroundColor(.primary)
       if !subscriptionManager.hasPremiumAccess {

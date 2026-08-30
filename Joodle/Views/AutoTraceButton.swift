@@ -44,6 +44,12 @@ struct AutoTraceButton: View {
   var onTrace: (AutoTraceDetail) -> Void
   /// Fired when a press drags across to the opposite side of the screen.
   var onRelocate: (Corner) -> Void
+  /// Fired the instant a press begins — before the fan blooms — so a feature tip
+  /// can clear itself out of the way of the buttons about to appear underneath.
+  var onPressBegan: () -> Void = {}
+  /// Fired when the press ends, pairing with `onPressBegan` so a feature tip can
+  /// resolve the stage it hid and advance to the next.
+  var onPressEnded: () -> Void = {}
   /// Available width, for sizing the "drag to the opposite side" threshold.
   var screenWidth: CGFloat
 
@@ -223,6 +229,7 @@ struct AutoTraceButton: View {
 
         if phase == .idle {
           highlighted = nil
+          onPressBegan()
           withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) {
             phase = .pressing
           }
@@ -253,6 +260,7 @@ struct AutoTraceButton: View {
       }
       .onEnded { value in
         longPressTask?.cancel()
+        onPressEnded()
         let endedPhase = phase
         let landed = highlighted
         guard !isTracing else { collapse(); return }

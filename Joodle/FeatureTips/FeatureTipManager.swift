@@ -63,6 +63,13 @@ final class FeatureTipManager: ObservableObject {
     /// Screen scopes currently active (see `.featureTipScope(_:)`).
     private var activeScopes: Set<String> = []
 
+    /// Anchor whose tips are hidden for the duration of an in-progress gesture,
+    /// so the bubble never sits over controls the gesture itself reveals (e.g.
+    /// the auto-trace fan). The stage showing when the interaction began is held
+    /// in `suspendedTipID` and resolved when it ends. See `beginInteraction`.
+    private var suspendedAnchorID: String?
+    private var suspendedTipID: String?
+
     /// Full-screen height reported by the overlay, used to derive the fallback
     /// edge from a last-known frame.
     private var viewportHeight: CGFloat = 0
@@ -225,6 +232,36 @@ final class FeatureTipManager: ObservableObject {
         markSeen(active.id)
     }
 
+    // MARK: - Interaction Suspension
+
+    /// Hide whichever tip is currently pointing at `anchorID` for the duration of
+    /// a gesture, remembering it so `endInteraction` can resolve it on release.
+    /// For controls that reveal more UI mid-gesture (the auto-trace fan blooms
+    /// buttons right where the bubble sits) — keeping the bubble up would obscure
+    /// them, and advancing to the next stage immediately would just swap in
+    /// another bubble over the same spot.
+    func beginInteraction(anchorID: String) {
+        guard let active = activeTip, active.anchorID == anchorID else { return }
+        suspendedAnchorID = anchorID
+        suspendedTipID = active.id
+        recompute()
+    }
+
+    /// End the gesture started by `beginInteraction`: resolve the stage that was
+    /// showing when it began (so the next surfaces only now, with the control
+    /// idle again). A no-op if no interaction is suspended for this anchor.
+    func endInteraction(anchorID: String) {
+        guard suspendedAnchorID == anchorID else { return }
+        let tipID = suspendedTipID
+        suspendedAnchorID = nil
+        suspendedTipID = nil
+        if let tipID {
+            markSeen(tipID)
+        } else {
+            recompute()
+        }
+    }
+
     // MARK: - Nudges
 
     /// How long a nudged tip stays on screen. Long enough to read and act on,
@@ -297,6 +334,8 @@ final class FeatureTipManager: ObservableObject {
 
     /// Whether a tip is currently eligible to display, per its behavior.
     private func isEligible(_ tip: FeatureTip) -> Bool {
+        // Hidden while its anchor is mid-gesture (see `beginInteraction`).
+        if tip.anchorID == suspendedAnchorID { return false }
         // An active nudge overrides both dismissal paths — that's the whole point
         // of it — but never the behavior check below: with no anchor on screen
         // there's nothing to point at.

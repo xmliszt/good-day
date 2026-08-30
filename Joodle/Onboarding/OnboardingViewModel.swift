@@ -174,6 +174,13 @@ class OnboardingViewModel: ObservableObject {
         let isRevisitFromSettings = UserDefaults.standard.bool(forKey: "isRevisitFromSettings")
         if !isRevisitFromSettings {
             FeatureTipManager.shared.markAllCurrentTipsAsSeen()
+
+            // Start Pro users with auto-trace on so the button is there to
+            // discover (the feature tip then teaches it); free users keep it off
+            // since they can't use it.
+            if SubscriptionManager.shared.hasPremiumAccess {
+                UserPreferences.shared.isAutoTraceEnabled = true
+            }
         }
 
         // Clear the revisit from settings flag

@@ -851,8 +851,29 @@ struct ContentView: View {
           isTracing: cameraContext.isAutoTracing,
           onTrace: { level in cameraContext.requestAutoTrace(detail: level) },
           onRelocate: { newCorner in autoTraceCornerOverride = newCorner },
+          // Hide the showing stage for the whole press so the bubble never sits
+          // over the fan buttons (or swaps in the next stage's bubble over the
+          // same spot); the stage resolves and the next surfaces only on release.
+          // `.none` below keeps the anchor reporting its frame without adding its
+          // own dismiss gesture, so this is the single resolution path.
+          onPressBegan: {
+            FeatureTipManager.shared.beginInteraction(
+              anchorID: FeatureTipDefinitions.AnchorID.autoTrace)
+          },
+          onPressEnded: {
+            FeatureTipManager.shared.endInteraction(
+              anchorID: FeatureTipDefinitions.AnchorID.autoTrace)
+          },
           screenWidth: geo.size.width
         )
+        // Three-stage discovery sequence (tap → change detail → relocate),
+        // resolved one stage per press via the begin/end callbacks above.
+        // Registered only while the button is actually visible so the bubble
+        // never points at a hidden control.
+        .featureTip(
+          FeatureTipDefinitions.AnchorID.autoTrace,
+          isEnabled: showPhotoAdjust && autoTraceButtonVisible,
+          resolution: .none)
         .position(
           x: resolvedCorner == .bottomTrailing ? geo.size.width - inset : inset,
           y: geo.size.height - inset

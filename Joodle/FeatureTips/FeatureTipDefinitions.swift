@@ -47,6 +47,13 @@ enum FeatureTipDefinitions {
         /// The horizontal doodle carousel in the day sheet's bottom half, guiding
         /// the user to swipe past the first doodle to add another one that day.
         static let multiDoodleCarousel = "featureTip.multiDoodle.carousel"
+        /// The standalone auto-trace button in the reference-photo adjust overlay.
+        /// Hosts a three-stage sequence — tap, change detail, relocate — resolved
+        /// by `.touch`, one stage per interaction.
+        static let autoTrace = "featureTip.autoTrace"
+        /// The "Auto Trace" row in root Settings, guiding Pro users to configure
+        /// the new feature.
+        static let autoTraceSettingsRow = "featureTip.autoTrace.settingsRow"
     }
 
     /// Tip identifiers callers need to name. Most tips are only ever reached
@@ -54,6 +61,9 @@ enum FeatureTipDefinitions {
     /// site addresses directly (e.g. to nudge).
     enum TipID {
         static let canvasFinish = "featureTip.canvasFinish"
+        /// The root-Settings "Auto Trace" row tip, resolved when the user
+        /// navigates into the settings screen rather than by a tap gesture.
+        static let autoTraceSettingsRow = "featureTip.autoTrace.settingsRow"
     }
 
     /// Stable scope identifiers for `.scoped` tips. A scope is a whole screen
@@ -83,6 +93,13 @@ enum FeatureTipDefinitions {
     /// appear back to back (drag to zoom, shoot, then adjust the photo) — so
     /// working either one retires the lesson instead of restating it verbatim.
     private static let zoomDragFeature = "zoomDrag"
+
+    /// Distinct keys for the three auto-trace button stages, so working one
+    /// gesture retires only that stage and lets the next surface — the same
+    /// per-stage-key pattern the rotation belt and translation pad use.
+    private static let autoTraceTapFeature = "autoTraceTap"
+    private static let autoTraceDetailFeature = "autoTraceDetail"
+    private static let autoTraceRelocateFeature = "autoTraceRelocate"
 
     /// Points to pull a zoom-ruler tip's attach point down into the ruler. The
     /// ruler's top ~64pt is the ogee that morphs it into the screen edge, so a
@@ -296,6 +313,56 @@ enum FeatureTipDefinitions {
             message: "Double-tap to re-center the photo",
             targetInset: translationPadInset,
             priority: 12,
+            showsAfterOnboarding: true
+        ),
+        // Auto-trace button: a three-stage sequence off one anchor, resolved by
+        // `.touch` so each interaction retires the showing stage and surfaces the
+        // next (tap → change detail → relocate). Pro only — the button exists
+        // only for Pro users who turned auto-trace on. Priorities 24…22 seat the
+        // sequence above the reference-photo gesture band (12…17), so the headline
+        // button is taught before the manual adjust controls that share the
+        // screen. The bubble sits above the corner-docked button and, once the
+        // overlay clamps it on-screen, aligns to the button's side.
+        FeatureTip(
+            id: "featureTip.autoTrace.tap",
+            anchorID: AnchorID.autoTrace,
+            featureKey: autoTraceTapFeature,
+            message: "Tap to auto trace",
+            priority: 24,
+            requiresPremium: true,
+            showsAfterOnboarding: true
+        ),
+        FeatureTip(
+            id: "featureTip.autoTrace.detail",
+            anchorID: AnchorID.autoTrace,
+            featureKey: autoTraceDetailFeature,
+            message: "Long-press or swipe out to change detailness",
+            priority: 23,
+            requiresPremium: true,
+            showsAfterOnboarding: true
+        ),
+        FeatureTip(
+            id: "featureTip.autoTrace.relocate",
+            anchorID: AnchorID.autoTrace,
+            featureKey: autoTraceRelocateFeature,
+            message: "Drag horizontally to opposite side",
+            priority: 22,
+            requiresPremium: true,
+            showsAfterOnboarding: true
+        ),
+        // Root Settings: point at the "Auto Trace" row so Pro users find where to
+        // configure (and enable) the new feature — the discovery path for those
+        // whose toggle is still off. Pro only, matching the Wiggly/Rainbow row
+        // tips: free users see the Pro-badged row but aren't sent to a paywall by
+        // a tip. Priority 7 seats it above those so the newest feature leads.
+        FeatureTip(
+            id: "featureTip.autoTrace.settingsRow",
+            anchorID: AnchorID.autoTraceSettingsRow,
+            featureKey: "autoTraceSettings",
+            message: "Configure the new auto-trace feature",
+            behavior: .scoped(scopeID: ScopeID.settings, defaultEdge: .bottom),
+            priority: 7,
+            requiresPremium: true,
             showsAfterOnboarding: true
         )
     ]
