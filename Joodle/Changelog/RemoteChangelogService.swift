@@ -28,7 +28,7 @@ struct ChangelogIndexEntry: Codable, Identifiable {
 
     var displayVersion: String {
         guard let v = versionComponents else { return version }
-        return "\(v.major).\(v.minor) (\(v.build))"
+        return "\(v.major).\(v.minor)"
     }
 
     var id: String { version }
@@ -40,11 +40,11 @@ struct ChangelogIndexEntry: Codable, Identifiable {
         return formatter.date(from: date)
     }
 
-    /// Parse version components
-    var versionComponents: (major: Int, minor: Int, build: Int)? {
+    /// Parse version components. The build is absent from 2.11 onward.
+    var versionComponents: (major: Int, minor: Int, build: Int?)? {
         let parts = version.split(separator: ".").compactMap { Int($0) }
-        guard parts.count == 3 else { return nil }
-        return (parts[0], parts[1], parts[2])
+        guard parts.count >= 2 else { return nil }
+        return (parts[0], parts[1], parts.count > 2 ? parts[2] : nil)
     }
 }
 

@@ -52,4 +52,35 @@ enum VersionComparator {
     static func isGreaterThanOrEqual(_ v1: String, _ v2: String) -> Bool {
         compare(v1, v2) >= 0
     }
+
+    // MARK: - Release-level comparison
+
+    /// The `major.minor` release a version belongs to, dropping any build component.
+    ///
+    /// A changelog is published once per release, so the build is not part of its
+    /// identity. Server-side versions are `major.minor` from 2.11 onward and
+    /// `major.minor.build` before it; both reduce to the same release here.
+    static func release(_ version: String) -> String {
+        version.split(separator: ".").prefix(2).joined(separator: ".")
+    }
+
+    /// Compare the releases that two version strings belong to
+    static func compareReleases(_ v1: String, _ v2: String) -> Int {
+        compare(release(v1), release(v2))
+    }
+
+    /// Check if v1 and v2 belong to the same release
+    static func isSameRelease(_ v1: String, _ v2: String) -> Bool {
+        compareReleases(v1, v2) == 0
+    }
+
+    /// Check if v1's release is older than v2's
+    static func isOlderRelease(_ v1: String, _ v2: String) -> Bool {
+        compareReleases(v1, v2) < 0
+    }
+
+    /// Check if v1's release is the same as or older than v2's
+    static func isSameOrOlderRelease(_ v1: String, _ v2: String) -> Bool {
+        compareReleases(v1, v2) <= 0
+    }
 }

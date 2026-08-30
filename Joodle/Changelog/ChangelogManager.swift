@@ -96,13 +96,16 @@ final class ChangelogManager: ObservableObject {
             // Fetch index to get metadata
             let index = try await remoteService.fetchChangelogIndex()
 
-            guard let indexEntry = index.first(where: { $0.version == version }) else {
+            guard let indexEntry = index.first(where: {
+                VersionComparator.isSameRelease($0.version, version)
+            }) else {
                 print("   ⚠️ Version \(version) not found in remote index, trying bundled...")
                 return ChangelogData.entry(for: version)
             }
 
-            // Fetch full markdown content
-            let markdown = try await remoteService.fetchChangelogDetail(version: version)
+            // Fetch full markdown content, keyed by the index's own version so the
+            // request works whether or not the server still carries a build number
+            let markdown = try await remoteService.fetchChangelogDetail(version: indexEntry.version)
 
             if let entry = await remoteService.convertToChangelogEntry(indexEntry, markdown: markdown) {
                 return entry
@@ -125,9 +128,10 @@ final class ChangelogManager: ObservableObject {
 
     /// Check if a specific version's changelog has been seen
     func hasSeenChangelog(for version: String) -> Bool {
-        // Consider it seen if it's older than or equal to last seen version
+        // Compared per release, so a rebuild of the same release doesn't re-present a
+        // changelog the user has already read
         guard let lastSeen = lastSeenVersion else { return false }
-        return VersionComparator.isLessThanOrEqual(version, lastSeen)
+        return VersionComparator.isSameOrOlderRelease(version, lastSeen)
     }
 
     /// Dismiss the changelog without marking as seen (user can see it again)

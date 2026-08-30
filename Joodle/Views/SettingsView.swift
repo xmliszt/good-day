@@ -1188,7 +1188,7 @@ ID: \(deviceIdentifier)
       let index = try await RemoteChangelogService.shared.fetchChangelogIndex()
       if let latestVersion = index.first?.version {
         let currentVersion = AppEnvironment.fullVersionString
-        isAppUpdateAvailable = VersionComparator.isLessThan(currentVersion, latestVersion)
+        isAppUpdateAvailable = VersionComparator.isOlderRelease(currentVersion, latestVersion)
       }
     } catch {
       // Silently fail - don't show update badge if we can't fetch

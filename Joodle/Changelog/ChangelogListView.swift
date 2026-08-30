@@ -17,7 +17,7 @@ struct ChangelogListView: View {
             return false
         }
         let currentVersion = AppEnvironment.fullVersionString
-        return VersionComparator.isLessThan(currentVersion, latestVersion)
+        return VersionComparator.isOlderRelease(currentVersion, latestVersion)
     }
 
     /// The latest available version string for display
@@ -60,7 +60,10 @@ struct ChangelogListView: View {
                             } label: {
                                 ChangelogRowView(
                                     indexEntry: indexEntry,
-                                    isCurrentVersion: indexEntry.version == AppEnvironment.fullVersionString
+                                    isCurrentVersion: VersionComparator.isSameRelease(
+                                        indexEntry.version,
+                                        AppEnvironment.fullVersionString
+                                    )
                                 )
                             }
                         }

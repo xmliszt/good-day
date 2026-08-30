@@ -21,8 +21,8 @@ struct ChangelogEntry: Identifiable, Hashable {
     /// Minor version number
     let minor: Int
 
-    /// Build number
-    let build: Int
+    /// Build number, for releases published before 2.11 carried it in the version
+    let build: Int?
 
     /// Release date
     let date: Date
@@ -35,12 +35,12 @@ struct ChangelogEntry: Identifiable, Hashable {
 
     // MARK: - Formatted Display Properties
 
-    /// Formatted version for display: "1.0.55"
+    /// Formatted version for display: "1.0"
     var displayVersion: String {
-        "\(major).\(minor) (\(build))"
+        "\(major).\(minor)"
     }
 
-    /// Formatted header line: "DECEMBER 25, 2025 · VERSION 1.0.55"
+    /// Formatted header line: "DECEMBER 25, 2025 · VERSION 1.0"
     var displayHeader: String {
         let dateFormatter = DateFormatter()
         dateFormatter.setLocalizedDateFormatFromTemplate("yMMMMd")
@@ -52,7 +52,7 @@ struct ChangelogEntry: Identifiable, Hashable {
         version: String,
         major: Int,
         minor: Int,
-        build: Int,
+        build: Int? = nil,
         date: Date,
         headerImageURLs: [URL] = [],
         markdownContent: String

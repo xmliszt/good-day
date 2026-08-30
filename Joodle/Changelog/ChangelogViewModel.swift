@@ -142,17 +142,25 @@ final class ChangelogViewModel: ObservableObject {
         changelogIndex.first
     }
 
+    /// The index entry covering the running app's release, if the server has one
+    private var currentReleaseIndexEntry: ChangelogIndexEntry? {
+        changelogIndex.first {
+            VersionComparator.isSameRelease($0.version, AppEnvironment.fullVersionString)
+        }
+    }
+
     /// Check if there's a changelog for the current app version
     func hasChangelogForCurrentVersion() -> Bool {
-        let currentVersion = AppEnvironment.fullVersionString
-        return changelogIndex.contains { $0.version == currentVersion } ||
-               bundledData.entry(for: currentVersion) != nil
+        currentReleaseIndexEntry != nil ||
+        bundledData.entry(for: AppEnvironment.fullVersionString) != nil
     }
 
     /// Get changelog for current app version
     func getCurrentVersionChangelog() async -> ChangelogEntry? {
-        let currentVersion = AppEnvironment.fullVersionString
-        return await fetchChangelogDetail(for: currentVersion)
+        guard let version = currentReleaseIndexEntry?.version else {
+            return bundledData.entry(for: AppEnvironment.fullVersionString)
+        }
+        return await fetchChangelogDetail(for: version)
     }
 
     // MARK: - Private Methods
