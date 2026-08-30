@@ -839,15 +839,18 @@ struct ContentView: View {
       // three detail levels to swipe through; a press dragged across the screen
       // flings it to the opposite corner for the session. Seated so its center
       // sits at the screen's corner-arc center — concentric with the rounded
-      // corner, and thus equidistant from the two edges it hugs. Floored so
-      // small-radius devices (iPhone X ≈ 39pt) don't tuck the button so close to
-      // the bottom edge that it fights the home-indicator / control-center
-      // gesture; the same floor applies to both axes, so it stays equidistant.
+      // corner, and thus equidistant from the two edges it hugs. Floored well
+      // above any display radius (iPhone X ≈ 39pt, Pro models 55–62pt) because a
+      // stationary touch that starts near the home indicator is held back by
+      // the system for ~0.8s before the app sees it — at the raw radius the
+      // button's lower half sat in that zone and every press and long-press
+      // felt laggy. The same floor applies to both axes, so it stays
+      // equidistant.
       GeometryReader { geo in
         let handednessCorner: AutoTraceButton.Corner =
           userPreferences.cameraZoomSliderHandedness == .right ? .bottomTrailing : .bottomLeading
         let resolvedCorner = autoTraceCornerOverride ?? handednessCorner
-        let inset = max(UIScreen.joodleDisplayCornerRadius, 55)
+        let inset = max(UIScreen.joodleDisplayCornerRadius, 80)
         AutoTraceButton(
           corner: resolvedCorner,
           activeDetail: $cameraContext.autoTraceDetail,

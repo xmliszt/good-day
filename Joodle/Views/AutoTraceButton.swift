@@ -11,7 +11,8 @@
 //  button: on iOS 26 a shared `GlassEffectContainer` fuses them, so they stretch
 //  apart like liquid and neck back together on collapse — the real thing, no
 //  hand-drawn metaball. Older systems fall back to three circles that fade and
-//  scale out of the source and back in.
+//  scale out of the source and back in. Letting go of a still hold leaves the
+//  fan standing: tap a level to trace at it, or the source to dismiss.
 //
 //  The button rests in the bottom corner on the user's handedness side, so the
 //  fan opens toward the screen interior — up-and-inward, away from the corner.
@@ -49,8 +50,9 @@ struct AutoTraceButton: View {
   /// Fired the instant a press begins — before the fan blooms — so a feature tip
   /// can clear itself out of the way of the buttons about to appear underneath.
   var onPressBegan: () -> Void = {}
-  /// Fired when the press ends, pairing with `onPressBegan` so a feature tip can
-  /// resolve the stage it hid and advance to the next.
+  /// Fired when the interaction returns to idle — after a tap, a landed pick, a
+  /// dismissed fan or a relocation — pairing with `onPressBegan` so a feature
+  /// tip can resolve the stage it hid and advance to the next.
   var onPressEnded: () -> Void = {}
   /// Available width, for sizing the "drag to the opposite side" threshold.
   var screenWidth: CGFloat
@@ -64,7 +66,7 @@ struct AutoTraceButton: View {
   private static let fanRadius: CGFloat = 68
   /// Hold this long, without moving, to bloom the fan. Dragging out into the
   /// cone opens it sooner (see `fanTriggerDistance`).
-  private static let longPressDelay: TimeInterval = 0.16
+  private static let longPressDelay: TimeInterval = 0.3
   /// A press that drags this far out into the fan cone opens the fan immediately.
   private static let fanTriggerDistance: CGFloat = 26
   /// The finger must be at least this far from center to light up any level, so a
@@ -78,12 +80,16 @@ struct AutoTraceButton: View {
   private static let relocateFarFraction: CGFloat = 0.6
   /// Horizontal drag speed (pt/s) that counts as a decisive relocate flick.
   private static let relocateFlickVelocity: CGFloat = 800
-  /// Container blend distance. Above the ~60pt edge-to-edge gap between the source
-  /// and a fanned level, so the two morph into and out of one another.
-  private static let glassBlendSpacing: CGFloat = 45
+  /// Container blend distance between the source and a fanned level — tuned by
+  /// eye for necks that hold once the interactive glass's own press response
+  /// lets go and the source shrinks back while the fan stands.
+  private static let glassBlendSpacing: CGFloat = 20
   /// Pop given to a pressed source button, and to the level under the finger, so
   /// the two read as the same "active" state.
   private static let pressedScale: CGFloat = 1.08
+  /// Lift in brightness for the level under the finger, matching the shine
+  /// interactive glass adds to a real press.
+  private static let highlightBrightness: Double = 0.08
 
   /// Levels top-to-bottom in the fan: less detailed, normal, more detailed. The
   /// most vertical slot sits topmost; angles rake toward the interior as the
@@ -97,7 +103,9 @@ struct AutoTraceButton: View {
     case idle
     /// Finger down, waiting to become a tap, a hold, or a relocation.
     case pressing
-    /// Fan is out; the finger is choosing a level.
+    /// Fan is out. With the finger down it is choosing a level; once a hold
+    /// has released the fan stays open, and a tap picks a level or, on the
+    /// source, dismisses.
     case fanned
     /// The press dragged across to the opposite corner.
     case relocated
@@ -112,10 +120,46 @@ struct AutoTraceButton: View {
   @State private var fingerOffset: CGPoint = .zero
   @State private var highlighted: AutoTraceDetail?
   @State private var longPressTask: Task<Void, Never>?
+  /// True for the life of a touch. Unlike `onEnded`, a `@GestureState` also
+  /// resets when the system *cancels* the touch (another recognizer or an edge
+  /// gesture claiming it), so `phase` can never be left stuck by a
+  /// touch that never ended — which would make the next press only collapse.
+  @GestureState private var isTouching = false
+  /// Set by the first `onChanged` of a touch, cleared when it ends — so the
+  /// handler can tell a touch-down from a move.
+  @State private var touchInProgress = false
+  /// Whether the fan bloomed during the current touch. Releasing such a touch
+  /// leaves the fan standing; releasing a touch that started on an already
+  /// open fan acts on what it landed on.
+  @State private var fanOpenedThisTouch = false
   @Namespace private var glassNamespace
 
   private var fanOpen: Bool { phase == .fanned }
+  /// Fan open with no finger on it — waiting for a tap.
+  private var fanStanding: Bool { fanOpen && !touchInProgress }
+  /// Held at the pressed scale for the whole time the fan is out, finger or
+  /// not: at exactly 1× the glass blend between source and levels renders with
+  /// visibly faceted edges, while any non-identity scale keeps it smooth.
   private var pressScale: CGFloat { phase == .pressing || phase == .fanned ? Self.pressedScale : 1 }
+
+  /// Hit region: the source circle, plus each level's circle while the fan is
+  /// out. The levels are offset outside the 44pt layout frame, so without this
+  /// a tap on one would miss the gesture entirely.
+  private var hitShape: Path {
+    let center = CGPoint(x: Self.buttonDiameter / 2, y: Self.buttonDiameter / 2)
+    let radius = Self.buttonDiameter / 2 + 4
+    var path = Path()
+    path.addEllipse(in: CGRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2))
+    if fanOpen {
+      for level in Self.fanLevels {
+        let o = offset(for: level)
+        path.addEllipse(in: CGRect(
+          x: center.x + o.width - radius, y: center.y + o.height - radius,
+          width: radius * 2, height: radius * 2))
+      }
+    }
+    return path
+  }
 
   private static var darkAccent: Color {
     Color(UIColor(.appAccent).resolvedColor(with: UITraitCollection(userInterfaceStyle: .dark)))
@@ -136,8 +180,34 @@ struct AutoTraceButton: View {
       // Liquid Glass must render its dark variant regardless of the app's
       // appearance (its tint is already the dark-resolved accent).
       .environment(\.colorScheme, .dark)
+      .contentShape(hitShape)
       .scaleEffect(pressScale)
-      .gesture(pressGesture)
+      // Simultaneous, not exclusive: the interactive glass installs its own
+      // press recognizers, and an exclusive `.gesture` waits for those to fail
+      // before it starts — the long-press timer would only begin ~0.5s after
+      // touch-down. Simultaneous recognition starts the press on touch-down.
+      .simultaneousGesture(pressGesture)
+      // A standing fan dismisses on a tap anywhere else. The catcher is a
+      // sibling behind the fan and outside `pressGesture`'s view, sized to cover
+      // the screen from wherever the button sits, so the tap is absorbed rather
+      // than falling through.
+      .background {
+        if fanStanding {
+          Color.clear
+            .frame(width: 4000, height: 4000)
+            .contentShape(Rectangle())
+            .onTapGesture { collapse() }
+        }
+      }
+      .onChange(of: isTouching) { _, touching in
+        guard !touching else { return }
+        // Next turn, so a normal release's `onEnded` has already run its phase
+        // handling; only a touch that ended with no `onEnded` still finds a
+        // non-idle phase here.
+        Task { @MainActor in
+          if !isTouching, touchInProgress { cancelPress() }
+        }
+      }
       .accessibilityElement()
       .accessibilityLabel(Text("Auto-trace", comment: "Button that converts the reference photo into a doodle"))
       .accessibilityValue(Text(activeDetail.accessibilityName))
@@ -196,8 +266,6 @@ struct AutoTraceButton: View {
   private func levelButton(_ level: AutoTraceDetail) -> some View {
     SparkleCluster(detail: level)
       .circularGlassButton(tintColor: Self.darkAccent, backgroundColor: glassBacking)
-      // The level under the finger pops exactly like the pressed source button —
-      // same scale, from center so the glyph stays put as it grows.
       .scaleEffect(highlighted == level ? Self.pressedScale : 1, anchor: .center)
       .animation(.easeOut(duration: 0.12), value: highlighted)
   }
@@ -218,16 +286,21 @@ struct AutoTraceButton: View {
 
   private var pressGesture: some Gesture {
     DragGesture(minimumDistance: 0, coordinateSpace: .local)
+      .updating($isTouching) { _, touching, _ in touching = true }
       .onChanged { value in
         guard !isTracing else { return }
 
-        if phase == .idle {
+        if !touchInProgress {
+          touchInProgress = true
+          fanOpenedThisTouch = false
           highlighted = nil
-          onPressBegan()
-          withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) {
-            phase = .pressing
+          if phase == .idle {
+            onPressBegan()
+            scheduleLongPress()
           }
-          scheduleLongPress()
+          withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) {
+            if phase == .idle { phase = .pressing }
+          }
         }
         guard phase != .relocated else { return }
 
@@ -254,7 +327,7 @@ struct AutoTraceButton: View {
       }
       .onEnded { value in
         longPressTask?.cancel()
-        onPressEnded()
+        touchInProgress = false
         let endedPhase = phase
         let landed = highlighted
         guard !isTracing else { collapse(); return }
@@ -277,8 +350,12 @@ struct AutoTraceButton: View {
             // the source stays put and carries on into its pending busy state.
             collapse()
             traceAfterCollapse(landed)
+          } else if fanOpenedThisTouch {
+            // The hold that opened the fan let go: leave it standing for a tap.
+            highlighted = nil
           } else {
-            // Released without landing on a level: just dismiss.
+            // A tap on the open fan that landed on no level (the source, or the
+            // gap between): dismiss.
             collapse()
           }
         case .idle, .relocated:
@@ -291,11 +368,29 @@ struct AutoTraceButton: View {
   /// a landed trace starts, so the source is settled before it goes busy.
   private static let collapseDuration: TimeInterval = 0.3
 
+  /// The touch went away without `onEnded`. A fan that was already standing
+  /// stays; anything mid-gesture folds up.
+  private func cancelPress() {
+    longPressTask?.cancel()
+    touchInProgress = false
+    if phase == .fanned, !fanOpenedThisTouch || highlighted == nil {
+      fanOpenedThisTouch = false
+      highlighted = nil
+      return
+    }
+    collapse()
+  }
+
+  /// Back to idle. Ends the press begun on the first touch-down, however many
+  /// touches the open fan absorbed in between.
   private func collapse() {
+    let wasActive = phase != .idle
     withAnimation(.spring(response: Self.collapseDuration, dampingFraction: 0.8)) {
       highlighted = nil
       phase = .idle
     }
+    fanOpenedThisTouch = false
+    if wasActive { onPressEnded() }
   }
 
   private func traceAfterCollapse(_ level: AutoTraceDetail) {
@@ -333,6 +428,7 @@ struct AutoTraceButton: View {
   private func openFan() {
     guard phase == .pressing else { return }
     longPressTask?.cancel()
+    fanOpenedThisTouch = true
     Haptic.play(with: .medium)
     withAnimation(.spring(response: 0.34, dampingFraction: 0.72)) {
       phase = .fanned
@@ -501,7 +597,7 @@ extension AutoTraceDetail {
         .position(x: x, y: geo.size.height - inset)
         .animation(.spring(response: 0.42, dampingFraction: 0.78), value: corner)
       }
-      .background(Color.black)
+      .background(Color.white)
       .ignoresSafeArea()
     }
   }
