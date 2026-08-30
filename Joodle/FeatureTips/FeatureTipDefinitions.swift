@@ -42,6 +42,8 @@ enum FeatureTipDefinitions {
         static let photoTranslationPad = "featureTip.photoTranslation.pad"
         /// The checkmark button in the drawing canvas's top row.
         static let canvasFinish = "featureTip.canvasFinish"
+        /// The eraser half of the clear/erase pill in the drawing canvas's top row.
+        static let eraseTool = "featureTip.eraseTool"
         /// The horizontal doodle carousel in the day sheet's bottom half, guiding
         /// the user to swipe past the first doodle to add another one that day.
         static let multiDoodleCarousel = "featureTip.multiDoodle.carousel"
@@ -93,11 +95,11 @@ enum FeatureTipDefinitions {
     /// sits at top center — right where an un-inset beak would point.
     private static let translationPadInset: CGFloat = 24
 
-    // Priorities 11…20 are the camera / reference-photo gesture tips. Every
+    // Priorities 12…21 are the camera / reference-photo gesture tips. Every
     // reference-photo control is on screen at once, so priority alone decides
-    // the order the bubbles walk the user through them: zoom (16), the pull-out
-    // ruler on the other edge (15), rotate (14), level (13), move (12),
-    // re-center (11). Each has its own `featureKey`, so working one control
+    // the order the bubbles walk the user through them: zoom (17), the pull-out
+    // ruler on the other edge (16), rotate (15), level (14), move (13),
+    // re-center (12). Each has its own `featureKey`, so working one control
     // retires only that step and lets the next surface. The band sits above
     // every other tip so the sequence never interleaves with them.
 
@@ -178,7 +180,7 @@ enum FeatureTipDefinitions {
             featureKey: zoomDragFeature,
             message: "Try dragging to zoom",
             targetInset: zoomRulerInset,
-            priority: 20,
+            priority: 21,
             showsAfterOnboarding: true
         ),
         // Reference photo, step 1 of 6: the zoom ruler on the handedness edge.
@@ -189,7 +191,7 @@ enum FeatureTipDefinitions {
             featureKey: zoomDragFeature,
             message: "Try dragging to zoom",
             targetInset: zoomRulerInset,
-            priority: 16,
+            priority: 17,
             showsAfterOnboarding: true
         ),
         // Step 2: the second ruler hiding behind the opposite edge. Two wordings
@@ -200,7 +202,7 @@ enum FeatureTipDefinitions {
             featureKey: photoEdgeZoomFeature,
             message: "Drag out from the left edge",
             targetInset: zoomRulerInset,
-            priority: 15,
+            priority: 16,
             showsAfterOnboarding: true
         ),
         FeatureTip(
@@ -209,7 +211,7 @@ enum FeatureTipDefinitions {
             featureKey: photoEdgeZoomFeature,
             message: "Drag out from the right edge",
             targetInset: zoomRulerInset,
-            priority: 15,
+            priority: 16,
             showsAfterOnboarding: true
         ),
         // Steps 3 and 4: the rotation belt — turning it, then levelling it.
@@ -218,7 +220,7 @@ enum FeatureTipDefinitions {
             anchorID: AnchorID.photoRotationBelt,
             featureKey: "photoRotationDrag",
             message: "Drag the belt to rotate",
-            priority: 14,
+            priority: 15,
             showsAfterOnboarding: true
         ),
         FeatureTip(
@@ -226,7 +228,7 @@ enum FeatureTipDefinitions {
             anchorID: AnchorID.photoRotationBelt,
             featureKey: "photoRotationReset",
             message: "Double-tap to reset rotation",
-            priority: 13,
+            priority: 14,
             showsAfterOnboarding: true
         ),
         // How to leave the expanded canvas. Tapping the surrounding backdrop used
@@ -247,6 +249,20 @@ enum FeatureTipDefinitions {
             message: "Tap here to finish your doodle",
             priority: 10,
             nudgeable: true,
+            showsAfterOnboarding: true
+        ),
+        // Erase-tool discovery: the clear/erase pill only mounts once the canvas
+        // has a stroke, so the tip surfaces exactly when the user has something to
+        // erase. Priority 11 puts it above the finish tip (10) so it takes over
+        // the moment a stroke exists, but below the reference-photo gesture band —
+        // which the two never actually contend for, since camera mode hides the
+        // pill. Tapping the eraser both activates erase mode and retires the tip.
+        FeatureTip(
+            id: "featureTip.eraseTool",
+            anchorID: AnchorID.eraseTool,
+            featureKey: "eraseTool",
+            message: "Use erase to erase a stroke",
+            priority: 11,
             showsAfterOnboarding: true
         ),
         // Multiple-doodles-per-day discovery: once a day has its first doodle and
@@ -270,7 +286,7 @@ enum FeatureTipDefinitions {
             featureKey: "photoTranslationDrag",
             message: "Drag the pad to move the photo",
             targetInset: translationPadInset,
-            priority: 12,
+            priority: 13,
             showsAfterOnboarding: true
         ),
         FeatureTip(
@@ -279,7 +295,7 @@ enum FeatureTipDefinitions {
             featureKey: "photoTranslationRecenter",
             message: "Double-tap to re-center the photo",
             targetInset: translationPadInset,
-            priority: 11,
+            priority: 12,
             showsAfterOnboarding: true
         )
     ]

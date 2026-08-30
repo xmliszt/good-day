@@ -49,7 +49,7 @@ struct FeatureTipCatalogueTests {
   /// wordings sit at the same rank because only one of them is ever anchored.
   @Test func photoTipsSurfaceInSpecifiedOrder() {
     let priorities = photoSequence.compactMap { tip($0)?.priority }
-    #expect(priorities == [16, 15, 15, 14, 13, 12, 11])
+    #expect(priorities == [17, 16, 16, 15, 14, 13, 12])
   }
 
   @Test func gestureTipsOutrankEveryOtherTip() {
@@ -121,9 +121,11 @@ struct FeatureTipCatalogueTests {
     #expect(tip("featureTip.photoRotation.reset")?.targetInset == 0)
   }
 
-  /// The checkmark is now the only way out of the expanded canvas, so its tip
-  /// must outrank every non-gesture tip — but stay under the reference-photo
-  /// sequence, which the user is mid-flow in when those controls are up.
+  /// The checkmark is the only way out of the expanded canvas, so its tip must
+  /// outrank every other non-gesture tip — except the erase-tool tip, which sits
+  /// just above it (a stroke exists, so erasing is the more immediate action) —
+  /// while staying under the reference-photo sequence the user is mid-flow in
+  /// when those controls are up.
   @Test func canvasFinishTipSitsBetweenTheGestureBandAndTheRest() {
     let finish = tip("featureTip.canvasFinish")
     #expect(finish != nil)
@@ -133,13 +135,33 @@ struct FeatureTipCatalogueTests {
       .filter { gestureIDs.contains($0.id) }
       .map(\.priority).min()
     let highestOther = FeatureTipDefinitions.all
-      .filter { !gestureIDs.contains($0.id) && $0.id != finish.id }
+      .filter { !gestureIDs.contains($0.id) && $0.id != finish.id && $0.id != "featureTip.eraseTool" }
       .map(\.priority).max()
     #expect(lowestGesture.map { finish.priority < $0 } == true)
     #expect(highestOther.map { finish.priority > $0 } == true)
     // The onboarding tutorial never highlights the checkmark, so it must survive
     // the blanket suppression applied when onboarding completes.
     #expect(finish.showsAfterOnboarding == true)
+  }
+
+  /// The erase-tool tip must appear the instant a stroke exists, so it outranks
+  /// the finish tip (otherwise the highest non-gesture tip). It stays under the
+  /// gesture band, though the two never actually contend — camera mode hides the
+  /// erase pill. The onboarding tutorial doesn't teach erase, so it must survive
+  /// the blanket suppression applied when onboarding completes.
+  @Test func eraseTipOutranksFinishButNotTheGestureBand() {
+    let erase = tip("featureTip.eraseTool")
+    let finish = tip("featureTip.canvasFinish")
+    #expect(erase != nil)
+    #expect(finish != nil)
+    guard let erase, let finish else { return }
+    #expect(erase.priority > finish.priority)
+    #expect(erase.showsAfterOnboarding == true)
+    let gestureIDs = Set(photoSequence + ["featureTip.cameraZoom.ruler"])
+    let lowestGesture = FeatureTipDefinitions.all
+      .filter { gestureIDs.contains($0.id) }
+      .map(\.priority).min()
+    #expect(lowestGesture.map { erase.priority < $0 } == true)
   }
 
   /// A nudge re-shows a tip the user already retired, so the flag belongs only on

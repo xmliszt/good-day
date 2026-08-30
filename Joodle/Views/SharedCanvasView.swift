@@ -480,6 +480,7 @@ struct SharedCanvasView<TrailingHeader: View>: View {
       }
       .accessibilityLabel(Text("Eraser", comment: "Accessibility label for the eraser tool toggle"))
       .accessibilityAddTraits(config.isEraserActive ? .isSelected : [])
+      .featureTip(FeatureTipDefinitions.AnchorID.eraseTool)
     }
     .font(.appFont(size: 18))
     .padding(2)
