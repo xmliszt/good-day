@@ -25,6 +25,10 @@ enum Pref {
   // Which side the camera zoom slider appears on
   static let cameraZoomSliderHandedness = Key(key: "camera_zoom_slider_handedness", default: SliderHandedness.right)
 
+  // Auto trace (Pro): master toggle, plus the detail level a single tap traces at.
+  static let isAutoTraceEnabled = Key(key: "is_auto_trace_enabled", default: false)
+  static let autoTraceDefaultDetail = Key(key: "auto_trace_default_detail", default: AutoTraceDetail.default.rawValue)
+
   // Experimental features
   static let enableTimeBackdrop = Key(key: "enable_time_backdrop", default: false)
   static let enableWigglyStrokes = Key(key: "enable_wiggly_strokes", default: false)
@@ -82,6 +86,8 @@ enum Pref {
     dailyReminderTimeSeconds.key,
     startOfWeek.key,
     cameraZoomSliderHandedness.key,
+    isAutoTraceEnabled.key,
+    autoTraceDefaultDetail.key,
     enableTimeBackdrop.key,
     enableWigglyStrokes.key,
     announcementsEnabled.key,
@@ -161,6 +167,18 @@ final class UserPreferences {
   var cameraZoomSliderHandedness: SliderHandedness = Pref.cameraZoomSliderHandedness.defaultValue {
     didSet {
       _cameraZoomSliderHandednessWatcher = cameraZoomSliderHandedness
+    }
+  }
+
+  // Auto trace
+  var isAutoTraceEnabled: Bool = Pref.isAutoTraceEnabled.defaultValue {
+    didSet {
+      _isAutoTraceEnabledWatcher = isAutoTraceEnabled
+    }
+  }
+  var autoTraceDefaultDetail: AutoTraceDetail = AutoTraceDetail.default {
+    didSet {
+      _autoTraceDefaultDetailWatcher = autoTraceDefaultDetail
     }
   }
 
@@ -337,6 +355,16 @@ final class UserPreferences {
     }
   }
 
+  private var _isAutoTraceEnabledWatcher: Bool {
+    get { get(Pref.isAutoTraceEnabled) }
+    set { set(Pref.isAutoTraceEnabled, newValue) }
+  }
+
+  private var _autoTraceDefaultDetailWatcher: AutoTraceDetail {
+    get { AutoTraceDetail(rawValue: get(Pref.autoTraceDefaultDetail)) ?? .default }
+    set { set(Pref.autoTraceDefaultDetail, newValue.rawValue) }
+  }
+
   private var _enableTimeBackdropWatcher: Bool {
     get { get(Pref.enableTimeBackdrop) }
     set { set(Pref.enableTimeBackdrop, newValue) }
@@ -408,6 +436,8 @@ final class UserPreferences {
     dailyReminderTimeSeconds = _dailyReminderTimeSecondsWatcher
     startOfWeek = _startOfWeekWatcher
     cameraZoomSliderHandedness = _cameraZoomSliderHandednessWatcher
+    isAutoTraceEnabled = _isAutoTraceEnabledWatcher
+    autoTraceDefaultDetail = _autoTraceDefaultDetailWatcher
     enableTimeBackdrop = _enableTimeBackdropWatcher
     enableWigglyStrokes = _enableWigglyStrokesWatcher
     announcementsEnabled = _announcementsEnabledWatcher
@@ -474,6 +504,8 @@ final class UserPreferences {
     dailyReminderTimeSeconds = Pref.dailyReminderTimeSeconds.defaultValue
     startOfWeek = Pref.startOfWeek.defaultValue
     cameraZoomSliderHandedness = Pref.cameraZoomSliderHandedness.defaultValue
+    isAutoTraceEnabled = Pref.isAutoTraceEnabled.defaultValue
+    autoTraceDefaultDetail = AutoTraceDetail.default
     enableTimeBackdrop = Pref.enableTimeBackdrop.defaultValue
     enableWigglyStrokes = Pref.enableWigglyStrokes.defaultValue
     announcementsEnabled = Pref.announcementsEnabled.defaultValue

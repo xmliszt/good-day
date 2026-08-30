@@ -633,7 +633,24 @@ struct SettingsView: View {
           Spacer()
         }
       }
-      
+
+      // Auto Trace (Pro). The whole feature is gated: subscribers open the detail
+      // settings, free users get the paywall and see a Pro badge on the row.
+      if subscriptionManager.hasPremiumAccess {
+        NavigationLink {
+          AutoTraceSettingsView()
+        } label: {
+          autoTraceRowLabel
+        }
+      } else {
+        Button {
+          paywallSource = "auto_trace"
+          showPaywall = true
+        } label: {
+          autoTraceRowLabel
+        }
+      }
+
       // Backup & Restore
       NavigationLink {
         BackupRestoreSettingsView()
@@ -696,7 +713,20 @@ struct SettingsView: View {
       Text("General")
     }
   }
-  
+
+  @ViewBuilder
+  private var autoTraceRowLabel: some View {
+    HStack {
+      SettingsIconView(systemName: "wand.and.stars", backgroundColor: .pink)
+      Text("Auto Trace")
+        .foregroundColor(.primary)
+      if !subscriptionManager.hasPremiumAccess {
+        PremiumFeatureBadge()
+      }
+      Spacer()
+    }
+  }
+
   @ViewBuilder
   private var iCloudSyncStatusView: some View {
     if needsRestartForSync {

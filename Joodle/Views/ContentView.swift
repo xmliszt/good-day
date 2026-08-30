@@ -23,6 +23,12 @@ struct ContentView: View {
 
   @Binding var selectedDateFromWidget: Date?
 
+  /// The auto-trace button is a Pro feature the user opts into: it shows only
+  /// when the setting is on and the user has premium access.
+  private var autoTraceButtonVisible: Bool {
+    userPreferences.isAutoTraceEnabled && subscriptionManager.hasPremiumAccess
+  }
+
   // --- GESTURE STATE ---
   // Tracks what the user is currently doing
   @State private var isScrubbing = false
@@ -841,7 +847,7 @@ struct ContentView: View {
         let inset = UIScreen.joodleDisplayCornerRadius
         AutoTraceButton(
           corner: resolvedCorner,
-          defaultDetail: .default,
+          defaultDetail: userPreferences.autoTraceDefaultDetail,
           isTracing: cameraContext.isAutoTracing,
           onTrace: { level in cameraContext.requestAutoTrace(detail: level) },
           onRelocate: { newCorner in autoTraceCornerOverride = newCorner },
@@ -854,8 +860,9 @@ struct ContentView: View {
         .animation(.spring(response: 0.42, dampingFraction: 0.78), value: resolvedCorner)
       }
       .ignoresSafeArea()
-      .opacity(showPhotoAdjust ? 1 : 0)
-      .allowsHitTesting(showPhotoAdjust)
+      // Only Pro users who turned auto-trace on ever see the button.
+      .opacity(showPhotoAdjust && autoTraceButtonVisible ? 1 : 0)
+      .allowsHitTesting(showPhotoAdjust && autoTraceButtonVisible)
       .animation(.easeInOut(duration: 0.25), value: showPhotoAdjust)
       }
 

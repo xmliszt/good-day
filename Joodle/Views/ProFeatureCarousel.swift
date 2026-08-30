@@ -14,13 +14,14 @@ import UIKit
 
 struct ProFeatureCarousel: View {
   private enum Feature: CaseIterable, Identifiable {
-    case unlimited, rainbow, wiggly, watermark, backdrop
+    case unlimited, autotrace, rainbow, wiggly, watermark, backdrop
 
     var id: Self { self }
 
     var title: LocalizedStringResource {
       switch self {
       case .unlimited: return "Doodle every day, forever"
+      case .autotrace: return "Trace a photo into a doodle"
       case .rainbow:   return "A color for every month"
       case .wiggly:    return "Strokes that come alive"
       case .watermark: return "Share without the watermark"
@@ -31,6 +32,7 @@ struct ProFeatureCarousel: View {
     var subtitle: LocalizedStringResource {
       switch self {
       case .unlimited: return "Free stops at \(SubscriptionManager.freeJoodlesAllowed) doodles. Pro keeps your whole year — and every year after."
+      case .autotrace: return "Point Joodle at any photo and it sketches the outline for you — a head start you finish by hand."
       case .rainbow:   return "Let your year bloom into more vibrant colors, or all twelve shades of the rainbow theme."
       case .wiggly:    return "Give every stroke a lively, hand-drawn wiggle."
       case .watermark: return "Free adds a small Joodle mark. Pro exports are clean — just your doodle."
@@ -50,6 +52,7 @@ struct ProFeatureCarousel: View {
     var playDuration: Double {
       switch self {
       case .unlimited: return UnlimitedDoodlesDemo.playThroughDuration
+      case .autotrace: return AutoTraceDemo.playThroughDuration
       case .rainbow:   return RainbowThemeDemo.playThroughDuration
       case .wiggly:    return WigglyStrokesDemo.playThroughDuration
       case .watermark: return WatermarkFreeDemo.playThroughDuration
@@ -114,6 +117,7 @@ struct ProFeatureCarousel: View {
   private func demo(for feature: Feature) -> some View {
     switch feature {
     case .unlimited: showcaseTile { UnlimitedDoodlesDemo(isActive: feature == selection) }
+    case .autotrace: showcaseTile { AutoTraceDemo(isActive: feature == selection) }
     case .rainbow:   showcaseTile { RainbowThemeDemo(isActive: feature == selection) }
     case .wiggly:    showcaseTile { WigglyStrokesDemo(isActive: feature == selection) }
     case .watermark: showcaseTile { WatermarkFreeDemo(isActive: feature == selection) }
@@ -360,6 +364,103 @@ private struct UnlimitedDoodlesDemo: View {
     .onChange(of: isActive) { _, active in
       if active { epoch = Date() }
     }
+  }
+}
+
+// MARK: - Auto-Trace Demo
+
+/// A reference photo that a Joodle line-drawing traces itself onto, then the
+/// photo fades to leave the clean doodle — the auto-trace feature shown rather
+/// than described. Strokes are baked (`AUTO_TRACE_DEMO_STROKES`) and revealed by
+/// marching one wavefront through them in draw order, so it reads as being drawn.
+private struct AutoTraceDemo: View {
+  let isActive: Bool
+  @State private var epoch = Date()
+
+  static let photoHold = 1.1
+  static let drawDuration = 2.6
+  static let cleanHold = 1.8
+  static let resetHold = 0.6
+
+  static var cycleDuration: Double { photoHold + drawDuration + cleanHold + resetHold }
+
+  /// Ends on the clean doodle; the reset tail runs only if the viewer lingers.
+  static var playThroughDuration: Double { photoHold + drawDuration + cleanHold }
+
+  /// Fraction of strokes drawn (0…1) and the photo's opacity for a point in the
+  /// loop: the photo dims to a tracing reference while drawing, fades out for the
+  /// clean reveal, then returns so the loop is seamless.
+  private func state(at time: Double) -> (reveal: Double, photo: Double) {
+    var x = time.truncatingRemainder(dividingBy: Self.cycleDuration)
+    if x < Self.photoHold { return (0, 1) }
+    x -= Self.photoHold
+    if x < Self.drawDuration {
+      let p = smoothstep(x / Self.drawDuration)
+      return (p, 1 - 0.72 * p)
+    }
+    x -= Self.drawDuration
+    if x < Self.cleanHold {
+      let p = smoothstep(x / Self.cleanHold)
+      return (1, 0.28 * (1 - p))
+    }
+    x -= Self.cleanHold
+    let p = smoothstep(x / Self.resetHold)
+    return (1 - p, p)
+  }
+
+  var body: some View {
+    TimelineView(.animation(paused: !isActive)) { timeline in
+      let s = state(at: timeline.date.timeIntervalSince(epoch))
+      VStack(spacing: 14) {
+        DemoBadge(isPro: s.reveal > 0.02)
+        art(reveal: s.reveal, photoOpacity: s.photo)
+      }
+    }
+    .onChange(of: isActive) { _, active in
+      if active { epoch = Date() }
+    }
+  }
+
+  private func art(reveal: Double, photoOpacity: Double) -> some View {
+    ZStack {
+      Image("AutoTraceSample")
+        .resizable()
+        .scaledToFill()
+        .opacity(photoOpacity)
+
+      Canvas { context, size in
+        let scale = size.width / CANVAS_SIZE
+        let lineWidth = max(DRAWING_LINE_WIDTH * scale, 1.5)
+        let style = StrokeStyle(lineWidth: lineWidth, lineCap: .round, lineJoin: .round)
+        var budget = Int((reveal * Double(AUTO_TRACE_DEMO_TOTAL_POINTS)).rounded())
+        guard budget > 0 else { return }
+
+        for stroke in AUTO_TRACE_DEMO_STROKES {
+          if budget <= 0 { break }
+          let n = min(stroke.points.count, budget)
+          budget -= stroke.points.count
+          let pts = stroke.points.prefix(n).map { CGPoint(x: $0.x * scale, y: $0.y * scale) }
+          guard let first = pts.first else { continue }
+          if pts.count == 1 || stroke.isDot {
+            let r = lineWidth / 2
+            context.fill(
+              Path(ellipseIn: CGRect(x: first.x - r, y: first.y - r, width: r * 2, height: r * 2)),
+              with: .color(.appAccent))
+            continue
+          }
+          var path = Path()
+          path.move(to: first)
+          for point in pts.dropFirst() { path.addLine(to: point) }
+          context.stroke(path, with: .color(.appAccent), style: style)
+        }
+      }
+    }
+    .aspectRatio(1, contentMode: .fit)
+    .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+    .overlay(
+      RoundedRectangle(cornerRadius: 20, style: .continuous)
+        .strokeBorder(.white.opacity(0.08), lineWidth: 1)
+    )
   }
 }
 
@@ -625,6 +726,33 @@ private struct LivingBackdropDemo: View {
     LivingBackdropDemo()
       .frame(width: 320, height: 300)
       .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+  }
+}
+
+#Preview("Auto-trace demo · alignment check") {
+  ZStack {
+    Color.black.ignoresSafeArea()
+    ZStack {
+      Image("AutoTraceSample")
+        .resizable()
+        .scaledToFill()
+        .opacity(0.3)
+      Canvas { context, size in
+        let scale = size.width / CANVAS_SIZE
+        let style = StrokeStyle(lineWidth: max(DRAWING_LINE_WIDTH * scale, 1.5), lineCap: .round, lineJoin: .round)
+        for stroke in AUTO_TRACE_DEMO_STROKES {
+          let pts = stroke.points.map { CGPoint(x: $0.x * scale, y: $0.y * scale) }
+          guard let first = pts.first else { continue }
+          var path = Path()
+          path.move(to: first)
+          for point in pts.dropFirst() { path.addLine(to: point) }
+          context.stroke(path, with: .color(.appAccent), style: style)
+        }
+      }
+    }
+    .aspectRatio(1, contentMode: .fit)
+    .frame(width: 280, height: 280)
+    .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
   }
 }
 

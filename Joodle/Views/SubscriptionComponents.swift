@@ -142,6 +142,8 @@ struct ProComparisonTable: View {
                     free: "\(SubscriptionManager.freeJoodlesAllowed)", pro: "Unlimited", proIsUnlimited: true),
       ComparisonRow(label: "Anniversary alarms",
                     free: "\(SubscriptionManager.freeAnniversaryAlarmsAllowed)", pro: "Unlimited", proIsUnlimited: true),
+      ComparisonRow(label: "Auto trace",
+                    free: "—", pro: "Unlimited usage", proIsUnlimited: false),
       ComparisonRow(label: "Widgets",
                     free: "—", pro: "All widgets", proIsUnlimited: false),
       ComparisonRow(label: "Sharing",
