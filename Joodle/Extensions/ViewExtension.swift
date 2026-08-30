@@ -10,6 +10,11 @@ import SwiftUI
 // MARK: - Circular Glass Button Style
 struct CircularGlassButtonStyle: ViewModifier {
   let tintColor: Color?
+  /// Optional backing color. On iOS 26 it tints the glass itself (so the color
+  /// is part of the glass layer and morphs with a `GlassEffectContainer`
+  /// metaball, rather than sitting as a static fill the morph stretches over);
+  /// on earlier systems it replaces the default `.appSurface` fill.
+  let backgroundColor: Color?
 
   /// Subtle dim applied while the button is disabled, so an unavailable action
   /// reads as inactive without fully hiding the glass.
@@ -28,13 +33,17 @@ struct CircularGlassButtonStyle: ViewModifier {
   @ViewBuilder
   private func styledContent(_ content: Content) -> some View {
     if #available(iOS 26, *) {
-      // iOS 26+: Use native glass background effect with circular shape
+      // iOS 26+: Use native glass background effect with circular shape. A
+      // `backgroundColor` (e.g. black for the auto-trace button) tints the glass
+      // itself so the color lives in the glass layer and morphs with a
+      // `GlassEffectContainer` metaball — a solid fill behind the glass would
+      // stay put while the morph stretched over it.
       content
         .font(.appFont(size: 18))
         .foregroundStyle(tintColor ?? Color.primary)
         .frame(width: 40, height: 40)
         .padding(2)
-        .glassEffect(.regular.interactive())
+        .glassEffect(glassEffect(tintedWith: backgroundColor))
         .clipShape(Circle())
     } else {
       // Pre-iOS 26: Use custom circular background style
@@ -46,10 +55,40 @@ struct CircularGlassButtonStyle: ViewModifier {
         .font(.appFont(size: 18))
         .foregroundStyle(tintColor ?? Color.primary)
         .frame(width: 40, height: 40)
-        .background(.appSurface)
+        .background(backgroundColor ?? .appSurface)
         .clipShape(Circle())
         .drawingGroup()
     }
+  }
+
+  @available(iOS 26, *)
+  private func glassEffect(tintedWith color: Color?) -> Glass {
+    let base = Glass.regular.interactive()
+    return color.map { base.tint($0) } ?? base
+  }
+}
+
+// MARK: - Pill Glass Background
+
+/// Capsule-shaped Liquid Glass backing, matching `CircularGlassButtonStyle` but
+/// sized to wrap a multi-icon pill (e.g. the clear + eraser pair on the canvas).
+struct PillGlassBackground: ViewModifier {
+  @Environment(\.isEnabled) private var isEnabled
+
+  func body(content: Content) -> some View {
+    Group {
+      if #available(iOS 26, *) {
+        content
+          .glassEffect(.regular.interactive(), in: Capsule())
+      } else {
+        content
+          .background(.appSurface)
+          .clipShape(Capsule())
+          .drawingGroup()
+      }
+    }
+    .opacity(isEnabled ? 1.0 : 0.4)
+    .animation(.easeInOut(duration: 0.2), value: isEnabled)
   }
 }
 
@@ -100,8 +139,8 @@ extension View {
     }
   }
 
-  func circularGlassButton(tintColor: Color? = nil) -> some View {
-    self.modifier(CircularGlassButtonStyle(tintColor: tintColor))
+  func circularGlassButton(tintColor: Color? = nil, backgroundColor: Color? = nil) -> some View {
+    self.modifier(CircularGlassButtonStyle(tintColor: tintColor, backgroundColor: backgroundColor))
   }
 
   /// Disables the iOS 26 liquid glass effect by using a blur background style. No-op on earlier versions.

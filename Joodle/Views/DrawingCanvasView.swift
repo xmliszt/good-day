@@ -52,6 +52,10 @@ struct DrawingCanvasView: View {
   @State private var pathMetadata: [PathMetadata] = []
   @State private var currentPathIsDot = false
   @State private var showClearConfirmation = false
+  /// Whether the eraser tool is toggled on. Auto-clears whenever the canvas
+  /// empties (undo-to-empty, clear, dismiss) so it never persists as a mode
+  /// across doodles.
+  @State private var isEraserActive = false
   /// Size and resulting path count of the last applied auto-trace, so a re-trace
   /// can replace it instead of stacking a second drawing on top of the first —
   /// but only while the user hasn't drawn anything since (see `applyAutoTrace`).
@@ -301,7 +305,13 @@ struct DrawingCanvasView: View {
         return nil
       }(),
       trailingExtra: isCameraLive ? AnyView(albumPickerButton) : nil,
-      hideStrokeButtons: isCameraLive
+      hideStrokeButtons: isCameraLive,
+      isEraserActive: isEraserActive,
+      onToggleEraser: toggleEraser,
+      onEraseBegan: {
+        saveStateToUndoStack()
+        redoStack.removeAll()
+      }
     )
   }
 
@@ -497,6 +507,14 @@ struct DrawingCanvasView: View {
           guard dismissResetGeneration == generation else { return }
           clearInMemoryDrawingState()
         }
+      }
+    }
+    .onChange(of: paths.isEmpty) { _, isEmpty in
+      // The eraser pill is only present while strokes exist (same visibility as
+      // the trash). Once the canvas empties — via erasing, undo, or clear — the
+      // pill is replaced by the camera button, so drop erase mode too.
+      if isEmpty, isEraserActive {
+        isEraserActive = false
       }
     }
     .onChange(of: saveDismissTrigger.wrappedValue) { _, requested in
@@ -1016,6 +1034,11 @@ struct DrawingCanvasView: View {
     Haptic.play(with: .medium)
   }
 
+  private func toggleEraser() {
+    Haptic.play(with: .light)
+    isEraserActive.toggle()
+  }
+
   private func saveStateToUndoStack() {
     // Save current paths and metadata state to undo stack
     undoStack.append((paths, pathMetadata))
@@ -1272,6 +1295,7 @@ struct DrawingCanvasView: View {
     isSaving = false
     isDismissing = false
     lastAutoTrace = nil
+    isEraserActive = false
   }
 
   private func saveMockDrawing() {

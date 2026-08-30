@@ -44,3 +44,34 @@ extension Path {
     return points
   }
 }
+
+// MARK: - Stroke Hit Testing (eraser)
+
+/// Shortest distance from `point` to the segment `a`–`b`.
+private func distance(from point: CGPoint, toSegment a: CGPoint, _ b: CGPoint) -> CGFloat {
+  let dx = b.x - a.x
+  let dy = b.y - a.y
+  if dx == 0 && dy == 0 {
+    return hypot(point.x - a.x, point.y - a.y)
+  }
+  let t = max(0, min(1, ((point.x - a.x) * dx + (point.y - a.y) * dy) / (dx * dx + dy * dy)))
+  let projX = a.x + t * dx
+  let projY = a.y + t * dy
+  return hypot(point.x - projX, point.y - projY)
+}
+
+/// Whether `point` lands within `radius` of the stroke described by `points`.
+/// A dot (or single point) is a hit when the point is within `radius` of its
+/// center; a polyline when it's within `radius` of any segment.
+func strokeIsHit(point: CGPoint, points: [CGPoint], isDot: Bool, radius: CGFloat) -> Bool {
+  guard let first = points.first else { return false }
+  if isDot || points.count == 1 {
+    return hypot(point.x - first.x, point.y - first.y) <= radius
+  }
+  for i in 1..<points.count {
+    if distance(from: point, toSegment: points[i - 1], points[i]) <= radius {
+      return true
+    }
+  }
+  return false
+}

@@ -33,6 +33,18 @@ struct CanvasButtonsConfig {
   /// When true, hide clear/undo/redo entirely (camera mode)
   let hideStrokeButtons: Bool
 
+  /// Whether the eraser tool is currently toggled on. Drives the eraser button's
+  /// active (accent) state and switches the canvas gesture from drawing to
+  /// stroke-erasing. Only wired by the main editor; other canvases leave it off.
+  let isEraserActive: Bool
+  /// Toggles the eraser tool. When non-nil the clear button becomes a pill that
+  /// pairs the trash with the eraser (see the sketch); nil keeps the plain
+  /// circular trash button (onboarding / placeholder canvases).
+  let onToggleEraser: (() -> Void)?
+  /// Called once at the start of an erase drag, before any stroke is removed, so
+  /// the parent can snapshot undo state.
+  let onEraseBegan: (() -> Void)?
+
   init(
     onClear: @escaping () -> Void,
     onUndo: (() -> Void)? = nil,
@@ -45,7 +57,10 @@ struct CanvasButtonsConfig {
     centerContent: AnyView? = nil,
     leadingExtra: AnyView? = nil,
     trailingExtra: AnyView? = nil,
-    hideStrokeButtons: Bool = false
+    hideStrokeButtons: Bool = false,
+    isEraserActive: Bool = false,
+    onToggleEraser: (() -> Void)? = nil,
+    onEraseBegan: (() -> Void)? = nil
   ) {
     self.onClear = onClear
     self.onUndo = onUndo
@@ -59,6 +74,9 @@ struct CanvasButtonsConfig {
     self.leadingExtra = leadingExtra
     self.trailingExtra = trailingExtra
     self.hideStrokeButtons = hideStrokeButtons
+    self.isEraserActive = isEraserActive
+    self.onToggleEraser = onToggleEraser
+    self.onEraseBegan = onEraseBegan
   }
 }
 
@@ -67,6 +85,11 @@ struct CanvasButtonsConfig {
 /// buttons land together. File-scoped because a generic type
 /// (`SharedCanvasView<TrailingHeader>`) can't hold a `static` stored property.
 private let strokeTraceDuration: TimeInterval = 0.5
+
+/// Radius (in canvas points) of the eraser's reach — matched to the on-canvas
+/// touch indicator so the circle the user sees is exactly what gets erased.
+/// File-scoped because a generic type can't hold a `static` stored property.
+private let eraserRadius: CGFloat = 12
 
 /// A reusable canvas view that handles drawing logic, rendering, and gestures.
 /// It is designed to be stateless regarding the data persistence, delegating that to the parent view.
@@ -168,6 +191,19 @@ struct SharedCanvasView<TrailingHeader: View>: View {
   /// Track the maximum distance from start point during a gesture to detect dots vs strokes
   @State private var maxDistanceFromStart: CGFloat = 0
   @State private var gestureStartPoint: CGPoint = .zero
+
+  /// Current finger location during an erase drag, in canvas coordinates. Drives
+  /// the touch-indicator circle; nil when not erasing.
+  @State private var eraserTouchPoint: CGPoint?
+  /// Whether the current erase drag has already snapshotted undo state, so the
+  /// whole drag is a single undo step.
+  @State private var eraseDidSnapshot = false
+  /// True for the lifetime of an erase drag. Latched at drag start so the drag
+  /// stays an erase even if the canvas empties mid-stroke and the parent flips
+  /// erase mode off — otherwise `onEnded` would skip its cleanup (stranding the
+  /// touch indicator) and the tail of the drag would start drawing on the now-
+  /// empty canvas.
+  @State private var isErasingDrag = false
 
   /// Callback when a stroke is finished (finger lifted or moved out of bounds)
   var onCommitStroke: () -> Void
@@ -318,17 +354,22 @@ struct SharedCanvasView<TrailingHeader: View>: View {
         Color.clear
           .frame(width: 44, height: 44)
         if !config.hideStrokeButtons, config.canClear {
-          Button(action: {
-            if let showConfirmation = config.showClearConfirmation {
-              showConfirmation.wrappedValue = true
-            } else {
-              config.onClear()
+          if config.onToggleEraser != nil {
+            clearErasePill(config)
+              .transition(.opacity)
+          } else {
+            Button(action: {
+              if let showConfirmation = config.showClearConfirmation {
+                showConfirmation.wrappedValue = true
+              } else {
+                config.onClear()
+              }
+            }) {
+              Image(systemName: "trash")
             }
-          }) {
-            Image(systemName: "trash")
+            .circularGlassButton(tintColor: .red)
+            .transition(.opacity)
           }
-          .circularGlassButton(tintColor: .red)
-          .transition(.opacity)
         }
         if !config.canClear || config.hideStrokeButtons, let leading = config.leadingExtra {
           leading
@@ -391,6 +432,59 @@ struct SharedCanvasView<TrailingHeader: View>: View {
       .opacity(isSaving ? 0.35 : 1.0)
       .disabled(isSaving)
     }
+  }
+
+  /// Clear + eraser as a single Liquid Glass pill (see design sketch). The trash
+  /// keeps its confirm-clear behavior; the eraser toggles erase mode and shows an
+  /// accent-tinted active state. Only used when `onToggleEraser` is wired.
+  @ViewBuilder
+  private func clearErasePill(_ config: CanvasButtonsConfig) -> some View {
+    HStack(spacing: 0) {
+      Button(action: {
+        if let showConfirmation = config.showClearConfirmation {
+          showConfirmation.wrappedValue = true
+        } else {
+          config.onClear()
+        }
+      }) {
+        Image(systemName: "trash")
+          .foregroundStyle(.red)
+          .frame(width: 44, height: 40)
+          .contentShape(Rectangle())
+      }
+      .accessibilityLabel(Text("Clear drawing", comment: "Accessibility label for the clear-drawing button"))
+
+      Divider()
+        .frame(height: 20)
+
+      Button(action: { config.onToggleEraser?() }) {
+        Image(systemName: "eraser")
+          .foregroundStyle(config.isEraserActive ? Color.appAccent : Color.primary)
+          .frame(width: 44, height: 40)
+          .background {
+            if config.isEraserActive {
+              // Fill the whole right half; only the trailing corners are rounded
+              // (radius concentric with the pill: 22 outer − 2 padding) so the
+              // highlight hugs the pill's right end and squares off at the divider.
+              UnevenRoundedRectangle(
+                topLeadingRadius: 0,
+                bottomLeadingRadius: 0,
+                bottomTrailingRadius: 20,
+                topTrailingRadius: 20,
+                style: .continuous
+              )
+              .fill(Color.appAccent.opacity(0.18))
+            }
+          }
+          .contentShape(Rectangle())
+      }
+      .accessibilityLabel(Text("Eraser", comment: "Accessibility label for the eraser tool toggle"))
+      .accessibilityAddTraits(config.isEraserActive ? .isSelected : [])
+    }
+    .font(.appFont(size: 18))
+    .padding(2)
+    .modifier(PillGlassBackground())
+    .animation(.easeInOut(duration: 0.2), value: config.isEraserActive)
   }
 
   var body: some View {
@@ -521,6 +615,19 @@ struct SharedCanvasView<TrailingHeader: View>: View {
           DragGesture(minimumDistance: 0)
             .onChanged { value in
               let point = value.location
+
+              if isErasingDrag || buttonsConfig?.isEraserActive == true {
+                isErasingDrag = true
+                if buttonsConfig?.isEraserActive == true {
+                  eraseStrokes(at: point)
+                } else {
+                  // Erase mode ended mid-drag (canvas emptied) — hide the
+                  // indicator and swallow the rest of the drag so it can't draw.
+                  eraserTouchPoint = nil
+                }
+                return
+              }
+
               let isInBounds =
               point.x >= 0 && point.x <= CANVAS_SIZE && point.y >= 0 && point.y <= CANVAS_SIZE
 
@@ -552,6 +659,13 @@ struct SharedCanvasView<TrailingHeader: View>: View {
               }
             }
             .onEnded { value in
+              if isErasingDrag || buttonsConfig?.isEraserActive == true {
+                eraserTouchPoint = nil
+                eraseDidSnapshot = false
+                isErasingDrag = false
+                return
+              }
+
               // Use max distance traveled to determine if this was a tap (dot) or stroke
               // This correctly handles cases where user draws a path returning to start
               let tapThreshold: CGFloat = 3.0
@@ -584,6 +698,18 @@ struct SharedCanvasView<TrailingHeader: View>: View {
               maxDistanceFromStart = 0
             }
         )
+
+        // Eraser touch indicator — a 12pt-radius accent circle at the finger so
+        // the user sees exactly what the next move will erase.
+        if buttonsConfig?.isEraserActive == true, let touch = eraserTouchPoint {
+          Circle()
+            .strokeBorder(Color.appAccent, lineWidth: 1.5)
+            .background(Circle().fill(Color.appAccent.opacity(0.15)))
+            .frame(width: eraserRadius * 2, height: eraserRadius * 2)
+            .position(touch)
+            .frame(width: CANVAS_SIZE, height: CANVAS_SIZE)
+            .allowsHitTesting(false)
+        }
 
         // Live camera preview — only mounted while the shutter is fully closed
         // over the canvas, then latched across the open phase so the feed stays
@@ -691,6 +817,14 @@ struct SharedCanvasView<TrailingHeader: View>: View {
       // than deep-comparing the whole `[Path]` array every render.
       rebuildWiggleSources()
     }
+    .onChange(of: buttonsConfig?.isEraserActive) { _, _ in
+      // Clear any transient erase state on every toggle so a leftover touch
+      // point from a prior session can't paint a stray indicator circle the
+      // moment the eraser is switched back on.
+      eraserTouchPoint = nil
+      eraseDidSnapshot = false
+      isErasingDrag = false
+    }
     .onChange(of: captureFlashID) { _, newID in
       guard newID != nil else { return }
       withAnimation(.linear(duration: 0.04)) {
@@ -778,6 +912,43 @@ struct SharedCanvasView<TrailingHeader: View>: View {
           style: StrokeStyle(lineWidth: DRAWING_LINE_WIDTH, lineCap: .round, lineJoin: .round)
         )
       }
+    }
+  }
+
+  /// Remove every committed stroke within the eraser's reach of `point`. The
+  /// whole drag is one undo step (`onEraseBegan` fires once, before the first
+  /// removal). The point is clamped to the canvas so a finger sliding off the
+  /// edge still shows the indicator at the rim.
+  private func eraseStrokes(at point: CGPoint) {
+    let clamped = CGPoint(
+      x: min(max(point.x, 0), CANVAS_SIZE),
+      y: min(max(point.y, 0), CANVAS_SIZE)
+    )
+    eraserTouchPoint = clamped
+
+    let radius = eraserRadius + DRAWING_LINE_WIDTH / 2
+    var removedAny = false
+
+    for index in stride(from: paths.count - 1, through: 0, by: -1) {
+      let isDot = index < pathMetadata.count ? pathMetadata[index].isDot : false
+      let points = paths[index].extractPoints()
+      guard strokeIsHit(point: clamped, points: points, isDot: isDot, radius: radius) else {
+        continue
+      }
+
+      if !eraseDidSnapshot {
+        buttonsConfig?.onEraseBegan?()
+        eraseDidSnapshot = true
+      }
+      paths.remove(at: index)
+      if index < pathMetadata.count {
+        pathMetadata.remove(at: index)
+      }
+      removedAny = true
+    }
+
+    if removedAny {
+      Haptic.play(with: .light)
     }
   }
 

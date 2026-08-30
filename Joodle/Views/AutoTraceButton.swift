@@ -95,6 +95,10 @@ struct AutoTraceButton: View {
     case relocated
   }
 
+  /// The app's real appearance (read before `body` forces the button's own glass
+  /// to render dark). Drives the black glass tint below.
+  @Environment(\.colorScheme) private var colorScheme
+
   @State private var phase: Phase = .idle
   /// Finger position relative to the button center.
   @State private var fingerOffset: CGPoint = .zero
@@ -111,10 +115,21 @@ struct AutoTraceButton: View {
     Color(UIColor(.appAccent).resolvedColor(with: UITraitCollection(userInterfaceStyle: .dark)))
   }
 
+  /// Black glass tint only in light appearance — it keeps the button dark over
+  /// the light canvas. In dark appearance the plain (untinted) liquid glass
+  /// already reads dark, so no tint is applied.
+  private var glassBacking: Color? {
+    colorScheme == .light ? .black : nil
+  }
+
   // MARK: - Body
 
   var body: some View {
     fan
+      // The button sits over the always-black floating-canvas chrome, so its
+      // Liquid Glass must render its dark variant regardless of the app's
+      // appearance (its tint is already the dark-resolved accent).
+      .environment(\.colorScheme, .dark)
       .scaleEffect(pressScale)
       .gesture(pressGesture)
       .accessibilityElement()
@@ -174,13 +189,13 @@ struct AutoTraceButton: View {
         .scaleEffect(0.8)
         .opacity(isTracing ? 1 : 0)
     }
-    .circularGlassButton(tintColor: Self.darkAccent)
+    .circularGlassButton(tintColor: Self.darkAccent, backgroundColor: glassBacking)
     .animation(.easeInOut(duration: 0.2), value: isTracing)
   }
 
   private func levelButton(_ level: AutoTraceDetail) -> some View {
     Image(systemName: level.fanGlyph)
-      .circularGlassButton(tintColor: Self.darkAccent)
+      .circularGlassButton(tintColor: Self.darkAccent, backgroundColor: glassBacking)
       // The level under the finger pops exactly like the pressed source button —
       // same scale, from center so the glyph stays put as it grows.
       .scaleEffect(highlighted == level ? Self.pressedScale : 1, anchor: .center)
