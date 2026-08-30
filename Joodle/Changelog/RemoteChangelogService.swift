@@ -96,9 +96,9 @@ actor RemoteChangelogService {
 
     // MARK: - Configuration
 
-    /// Base URL for the changelog API
-    /// Update this to your Vercel API endpoint
-    private let baseURL = "https://liyuxuan.dev/api/changelogs/joodle"
+    /// Base URL for the changelog API. Debug builds can be pointed at a local
+    /// portfolio dev server — see `AppEnvironment.apiBaseURL`.
+    private var baseURL: String { "\(AppEnvironment.apiBaseURL)/api/changelogs/joodle" }
     private var currentLocale: String { LocaleProvider.currentLanguageCode }
 
     // MARK: - Caching

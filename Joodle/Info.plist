@@ -3,6 +3,13 @@
   "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<!-- Permits cleartext to loopback and local hostnames only, so a Debug build
+		     can talk to a portfolio dev server. Internet requests still require HTTPS. -->
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 	<key>NSCameraUsageDescription</key>
 	<string>Joodle uses the camera to capture quick reference photos for tracing your doodle. Captured photos are also saved to your Photos album by default; you can turn this off in Settings.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>

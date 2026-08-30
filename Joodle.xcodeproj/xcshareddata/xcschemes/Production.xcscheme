@@ -62,6 +62,13 @@
             ReferencedContainer = "container:Joodle.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
+      <EnvironmentVariables>
+         <EnvironmentVariable
+            key = "JOODLE_API_BASE_URL"
+            value = "http://localhost:3000"
+            isEnabled = "YES">
+         </EnvironmentVariable>
+      </EnvironmentVariables>
       <StoreKitConfigurationFileReference
          identifier = "../../Store.storekit">
       </StoreKitConfigurationFileReference>

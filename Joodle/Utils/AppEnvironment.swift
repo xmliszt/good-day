@@ -155,6 +155,23 @@ enum AppEnvironment {
         Bundle.main.bundleIdentifier ?? "Unknown"
     }
 
+    // MARK: - Content API
+
+    /// Origin serving the Joodle content APIs.
+    ///
+    /// Debug builds honour a `JOODLE_API_BASE_URL` environment variable so the app can
+    /// run against a local portfolio dev server — the shared scheme sets it. Release
+    /// builds always use production; the override cannot be compiled in.
+    static var apiBaseURL: String {
+        #if DEBUG
+        let override = ProcessInfo.processInfo.environment["JOODLE_API_BASE_URL"] ?? ""
+        if !override.isEmpty {
+            return override.hasSuffix("/") ? String(override.dropLast()) : override
+        }
+        #endif
+        return "https://liyuxuan.dev"
+    }
+
     // MARK: - Feedback URLs
 
     /// The App Store ID for the app (update this with your actual App Store ID)
