@@ -53,7 +53,7 @@ struct AutoTraceSettingsView: View {
       Section {
         Toggle(isOn: enabledBinding) {
           HStack {
-            SettingsIconView(systemName: "wand.and.stars", backgroundColor: .pink)
+            SettingsIconView(systemName: "lasso.and.sparkles", backgroundColor: .pink)
             Text("Auto Trace")
           }
         }
@@ -68,13 +68,22 @@ struct AutoTraceSettingsView: View {
             Label {
               Text(detail.accessibilityName)
             } icon: {
-              Image(systemName: detail.fanGlyph)
+              SparkleCluster(detail: detail, primaryScale: 0.8)
+                .foregroundStyle(.appAccent)
             }
             .tag(detail)
           }
         } label: {
           Text("Default Detail Level")
         }
+        // Inline, not the Form's default menu style: a menu renders each option
+        // through UIKit, which keeps only a single SF Symbol per label and
+        // collapses every level's cluster to one sparkle. Inline rows render the
+        // real SwiftUI label, so each level shows its own cluster.
+        .pickerStyle(.inline)
+        // The label is kept for VoiceOver but hidden — the section header already
+        // reads "Default Detail Level", so an inline label row would duplicate it.
+        .labelsHidden()
       } header: {
         Text("Default Detail Level")
       } footer: {

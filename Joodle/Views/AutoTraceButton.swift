@@ -36,8 +36,10 @@ struct AutoTraceButton: View {
 
   /// Resolved rest corner — the handedness side, or a transient relocation.
   var corner: Corner
-  /// Detail a plain tap traces at. Wired to a user setting later.
-  var defaultDetail: AutoTraceDetail
+  /// The in-session detail profile: what a plain tap traces at, and what the
+  /// base glyph shows. Fanning out and picking a level overwrites it for the
+  /// rest of the session (it is not written back to the user's setting).
+  @Binding var activeDetail: AutoTraceDetail
   /// True while a trace runs — the button goes busy and stops taking input.
   var isTracing: Bool
   /// Fired on tap, and on release of a fan swipe that landed on a level.
@@ -110,8 +112,6 @@ struct AutoTraceButton: View {
   @State private var fingerOffset: CGPoint = .zero
   @State private var highlighted: AutoTraceDetail?
   @State private var longPressTask: Task<Void, Never>?
-  /// Detail a VoiceOver adjustable action last landed on.
-  @State private var accessibilityDetail: AutoTraceDetail = .default
   @Namespace private var glassNamespace
 
   private var fanOpen: Bool { phase == .fanned }
@@ -140,14 +140,14 @@ struct AutoTraceButton: View {
       .gesture(pressGesture)
       .accessibilityElement()
       .accessibilityLabel(Text("Auto-trace", comment: "Button that converts the reference photo into a doodle"))
-      .accessibilityValue(Text(accessibilityDetail.accessibilityName))
+      .accessibilityValue(Text(activeDetail.accessibilityName))
       .accessibilityAddTraits(.isButton)
-      .accessibilityAction { onTrace(defaultDetail) }
+      .accessibilityAction { onTrace(activeDetail) }
       .accessibilityAdjustableAction { direction in
-        accessibilityDetail = direction == .increment
-          ? accessibilityDetail.increased
-          : accessibilityDetail.decreased
-        onTrace(accessibilityDetail)
+        activeDetail = direction == .increment
+          ? activeDetail.increased
+          : activeDetail.decreased
+        onTrace(activeDetail)
       }
   }
 
@@ -183,24 +183,18 @@ struct AutoTraceButton: View {
   }
 
   private var sourceButton: some View {
-    // Glyph and spinner both stay mounted and cross-fade — swapping them with an
-    // if/else would change the glass content's identity and flash the button off
-    // and back on as a trace begins.
-    ZStack {
-      Image(systemName: "lasso.badge.sparkles")
-        .opacity(isTracing ? 0 : 1)
-      ProgressView()
-        .progressViewStyle(.circular)
-        .tint(Self.darkAccent)
-        .scaleEffect(0.8)
-        .opacity(isTracing ? 1 : 0)
-    }
-    .circularGlassButton(tintColor: Self.darkAccent, backgroundColor: glassBacking)
-    .animation(.easeInOut(duration: 0.2), value: isTracing)
+    // The base glyph is the active profile's own sparkle cluster, so the button
+    // shows at a glance what a tap will trace at. While a trace runs it bounces
+    // as its own busy indicator — avoiding a UIKit `ProgressView`, which the
+    // pre-iOS 26 `drawingGroup()` in `circularGlassButton` can't rasterize
+    // ("Unable to render flattened version of ...CircularUIKitProgressView").
+    SparkleCluster(detail: activeDetail, busy: isTracing)
+      .circularGlassButton(tintColor: Self.darkAccent, backgroundColor: glassBacking)
+      .animation(.spring(response: 0.35, dampingFraction: 0.7), value: activeDetail)
   }
 
   private func levelButton(_ level: AutoTraceDetail) -> some View {
-    Image(systemName: level.fanGlyph)
+    SparkleCluster(detail: level)
       .circularGlassButton(tintColor: Self.darkAccent, backgroundColor: glassBacking)
       // The level under the finger pops exactly like the pressed source button —
       // same scale, from center so the glyph stays put as it grows.
@@ -271,13 +265,16 @@ struct AutoTraceButton: View {
           let moved = hypot(value.translation.width, value.translation.height)
           if moved < 12 {
             Haptic.play(with: .medium)
-            onTrace(defaultDetail)
+            onTrace(activeDetail)
           }
         case .fanned:
           if let landed {
             Haptic.play(with: .medium)
+            // Landing on a level overwrites the in-session profile, so the base
+            // glyph updates and later taps trace at this level too.
+            activeDetail = landed
             // Fold the fan back into the source first, then kick off the trace —
-            // the source stays put and carries on into its pending spinner.
+            // the source stays put and carries on into its pending busy state.
             collapse()
             traceAfterCollapse(landed)
           } else {
@@ -402,19 +399,76 @@ extension UIScreen {
   }
 }
 
-// MARK: - Detail glyphs
+// MARK: - Sparkle cluster
 
-extension AutoTraceDetail {
-  /// The SF Symbol shown for this level in the fan — ascending sparkle density
-  /// stands in for detail without words to localize.
-  var fanGlyph: String {
-    switch self {
-    case .simple: return "sparkle"
-    case .balanced: return "sparkles.2"
-    case .detailed: return "sparkles"
+/// The glyph shown for a fan level: a hand-composed cluster of plain `sparkle`
+/// symbols whose count and size climb with detail — one for simple, two for
+/// balanced, three for detailed. It stands in for `sparkle` → `sparkles.2` →
+/// `sparkles` (the `.2` variant is iOS 26-only and won't render on the older
+/// systems this control still supports). While `busy`, the whole cluster pulses
+/// its opacity as a calm in-flight-trace indicator.
+struct SparkleCluster: View {
+  let detail: AutoTraceDetail
+  /// When true, the cluster pulses its opacity to signal a running trace.
+  var busy: Bool = false
+  /// Extra scale applied to the largest (primary) sparkle only. At the small icon
+  /// size of a Form row the full-size primary crowds the accent sparkles, so
+  /// callers there pass a value below 1 to open the cluster up.
+  var primaryScale: CGFloat = 1
+
+  private struct Sparkle {
+    let offset: CGSize
+    let scale: CGFloat
+  }
+
+  /// Base point size each sparkle scales from — kept under the 40pt glass
+  /// content frame so the accent sparkles clear the button edge.
+  private static let baseSize: CGFloat = 16
+  /// Opacity the cluster dips to at the bottom of the busy pulse.
+  private static let busyDimOpacity: Double = 0.35
+
+  private static func sparkles(for detail: AutoTraceDetail) -> [Sparkle] {
+    switch detail {
+    case .simple:
+      return [Sparkle(offset: .zero, scale: 1.0)]
+    case .balanced:
+      return [
+        Sparkle(offset: CGSize(width: -3, height: -2), scale: 1.0),
+        Sparkle(offset: CGSize(width: 5, height: 5), scale: 0.55),
+      ]
+    case .detailed:
+      return [
+        Sparkle(offset: CGSize(width: -4, height: -3), scale: 1.0),
+        Sparkle(offset: CGSize(width: 5, height: 3), scale: 0.6),
+        Sparkle(offset: CGSize(width: 0, height: 6), scale: 0.42),
+      ]
     }
   }
 
+  /// Oscillates while `busy`, driving the opacity pulse.
+  @State private var dimmed = false
+
+  var body: some View {
+    ZStack {
+      ForEach(Array(Self.sparkles(for: detail).enumerated()), id: \.offset) { index, spec in
+        Image(systemName: "sparkle")
+          .font(.system(size: Self.baseSize))
+          .scaleEffect(spec.scale * (index == 0 ? primaryScale : 1))
+          .offset(x: spec.offset.width, y: spec.offset.height)
+      }
+    }
+    .opacity(busy && dimmed ? Self.busyDimOpacity : 1)
+    .animation(
+      busy ? .easeInOut(duration: 0.6).repeatForever(autoreverses: true) : .easeOut(duration: 0.2),
+      value: dimmed
+    )
+    .onChange(of: busy) { _, now in dimmed = now }
+  }
+}
+
+// MARK: - Detail names
+
+extension AutoTraceDetail {
   /// Spoken name for the level. The visible control is glyph-only, so these
   /// exist for VoiceOver rather than for layout.
   var accessibilityName: LocalizedStringKey {
@@ -431,13 +485,14 @@ extension AutoTraceDetail {
 #Preview("Auto-trace button") {
   struct Harness: View {
     @State private var corner: AutoTraceButton.Corner = .bottomTrailing
+    @State private var detail: AutoTraceDetail = .default
     var body: some View {
       GeometryReader { geo in
         let inset: CGFloat = 44
         let x = corner == .bottomTrailing ? geo.size.width - inset : inset
         AutoTraceButton(
           corner: corner,
-          defaultDetail: .default,
+          activeDetail: $detail,
           isTracing: false,
           onTrace: { _ in },
           onRelocate: { corner = $0 },

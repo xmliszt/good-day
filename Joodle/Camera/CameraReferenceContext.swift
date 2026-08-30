@@ -131,9 +131,13 @@ final class CameraReferenceContext: ObservableObject {
 
   // MARK: - Auto-trace
 
-  /// Detail level the trace control is currently set to. Lives here rather than
-  /// in the control so it survives the control being unmounted (e.g. while the
-  /// camera goes live again) and stays in step with an in-flight trace.
+  /// The in-session detail profile: what a plain tap on the trace control uses,
+  /// and what its base glyph shows. Seeded from the user's saved default each
+  /// time a fresh reference is installed, then overwritten in memory when the
+  /// user fans out and picks a different level — never written back to the
+  /// setting, so the next reference starts from the saved default again. Lives
+  /// here rather than in the control so it survives the control being unmounted
+  /// (e.g. while the camera goes live again) and stays in step with a trace.
   @Published var autoTraceDetail: AutoTraceDetail = .default
   /// True while a trace is running — drives the control's busy state.
   @Published private(set) var isAutoTracing: Bool = false
@@ -388,10 +392,13 @@ final class CameraReferenceContext: ObservableObject {
 
   /// Recenters the reference photo — 1.0 zoom, no offset, no rotation. Called
   /// whenever a fresh reference is installed so each capture/import starts clean.
+  /// Also reseeds the in-session trace profile from the saved default, so any
+  /// per-session level override from a previous reference doesn't carry over.
   func resetBackdropTransform() {
     backdropZoom = 1.0
     backdropOffset = .zero
     backdropRotation = .zero
+    autoTraceDetail = UserPreferences.shared.autoTraceDefaultDetail
   }
 
   /// Kicks off an auto-trace of the reference photo as it is currently framed.
@@ -608,7 +615,7 @@ final class CameraReferenceContext: ObservableObject {
       suppressPreview = false
       isCapturing = false
       autoTraceResult = nil
-      autoTraceDetail = .default
+      autoTraceDetail = UserPreferences.shared.autoTraceDefaultDetail
       showAutoTraceEmptyMessage = false
     }
     cancelAutoTrace()

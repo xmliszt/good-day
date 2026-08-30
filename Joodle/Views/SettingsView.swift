@@ -727,7 +727,7 @@ struct SettingsView: View {
   @ViewBuilder
   private var autoTraceRowLabel: some View {
     HStack {
-      SettingsIconView(systemName: "lasso.badge.sparkles", backgroundColor: .pink)
+      SettingsIconView(systemName: "lasso.and.sparkles", backgroundColor: .pink)
       Text("Auto Trace")
         .foregroundColor(.primary)
       if !subscriptionManager.hasPremiumAccess {
