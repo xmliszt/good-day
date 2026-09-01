@@ -216,13 +216,6 @@ class SubscriptionManager: ObservableObject {
         return existingDoodleCount < freeDoodlesPerDay ? .allowed : .dailyLimitReached
     }
 
-    // Free plan limits - maximum anniversary alarms allowed for free users
-    nonisolated static let freeAnniversaryAlarmsAllowed = 5
-
-    var maxJoodlesAllowed: Int {
-        hasPremiumAccess ? Int.max : Self.freeJoodlesAllowed
-    }
-
     // MARK: - Network-Aware Access Control
 
     /// Check if network is available for StoreKit verification
@@ -691,32 +684,6 @@ class SubscriptionManager: ObservableObject {
 
     // MARK: - Joodle Access Helpers (Synchronous - uses cached state)
 
-    /// Synchronous check - uses cached subscription state
-    /// For critical access points, use verifySubscriptionForAccess() first
-    func canCreateJoodle(currentTotalCount: Int) -> Bool {
-        if hasPremiumAccess {
-            return true
-        }
-        return currentTotalCount < Self.freeJoodlesAllowed
-    }
-
-    /// Async access check with online verification
-    /// Use this before allowing creation of new Joodles
-    func canCreateJoodleWithVerification(currentTotalCount: Int) async -> Bool {
-        let hasAccess = await verifySubscriptionForAccess()
-        if hasAccess {
-            return true
-        }
-        return currentTotalCount < Self.freeJoodlesAllowed
-    }
-
-    func remainingJoodles(currentTotalCount: Int) -> Int {
-        if hasPremiumAccess {
-            return Int.max
-        }
-        return max(0, Self.freeJoodlesAllowed - currentTotalCount)
-    }
-
     func totalJoodleCount(from entries: [DayEntry]) -> Int {
         return entries.filter { entry in
             entry.drawingData != nil
@@ -737,70 +704,6 @@ class SubscriptionManager: ObservableObject {
             print("Error fetching Joodle count: \(error)")
             return 0
         }
-    }
-
-    func checkAccess(in modelContext: ModelContext) -> Bool {
-        let totalCount = fetchTotalJoodleCount(in: modelContext)
-        return canCreateJoodle(currentTotalCount: totalCount)
-    }
-
-    /// Async access check with online verification
-    /// Use this before allowing Joodle creation
-    func checkAccessWithVerification(in modelContext: ModelContext) async -> Bool {
-        let totalCount = fetchTotalJoodleCount(in: modelContext)
-        return await canCreateJoodleWithVerification(currentTotalCount: totalCount)
-    }
-
-    func canEditJoodle(entry: DayEntry, in modelContext: ModelContext) -> Bool {
-        if hasPremiumAccess {
-            return true
-        }
-
-        let descriptor = FetchDescriptor<DayEntry>(
-            predicate: #Predicate { entry in
-                entry.drawingData != nil
-            },
-            sortBy: [SortDescriptor(\.dateString, order: .forward)]
-        )
-
-        do {
-            let allJoodles = try modelContext.fetch(descriptor)
-            guard let index = allJoodles.firstIndex(where: { $0.id == entry.id }) else {
-                return true
-            }
-            return index < Self.freeJoodlesAllowed
-        } catch {
-            print("Error checking Joodle edit access: \(error)")
-            return true
-        }
-    }
-
-    func canEditJoodle(atIndex index: Int) -> Bool {
-        if hasPremiumAccess {
-            return true
-        }
-        return index < Self.freeJoodlesAllowed
-    }
-
-    /// Async edit check with online verification
-    /// Use this before allowing Joodle edits
-    func canEditJoodleWithVerification(entry: DayEntry, in modelContext: ModelContext) async -> Bool {
-        let hasAccess = await verifySubscriptionForAccess()
-        if hasAccess {
-            return true
-        }
-
-        // Fall back to checking if within free limit
-        return canEditJoodle(entry: entry, in: modelContext)
-    }
-
-    /// Async edit check with online verification (by index)
-    func canEditJoodleWithVerification(atIndex index: Int) async -> Bool {
-        let hasAccess = await verifySubscriptionForAccess()
-        if hasAccess {
-            return true
-        }
-        return index < Self.freeJoodlesAllowed
     }
 
     // MARK: - Day-Scoped Doodle Gate (additive - uses cached state)

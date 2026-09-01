@@ -96,8 +96,6 @@ struct MembershipBannerView: View {
   let isInGracePeriod: Bool
   let gracePeriodDaysRemaining: Int
   let statusMessage: String?
-  let joodleCount: Int
-  let alarmCount: Int
   let onTap: () -> Void
 
   private func localizedDayCount(_ count: Int) -> String {
@@ -150,23 +148,9 @@ struct MembershipBannerView: View {
                 .foregroundColor(.white.opacity(0.9))
             }
           } else {
-            HStack(spacing: 16) {
-              HStack(spacing: 4) {
-                Image(systemName: "doc.text")
-                  .font(.appCaption())
-                Text("\(joodleCount, format: .number.grouping(.never))/\(SubscriptionManager.freeJoodlesAllowed, format: .number.grouping(.never))")
-                  .font(.appCaption())
-              }
-              .foregroundColor(joodleCount >= SubscriptionManager.freeJoodlesAllowed ? .red : .black.opacity(0.8))
-              
-              HStack(spacing: 4) {
-                Image(systemName: "bell")
-                  .font(.appCaption())
-                Text("\(alarmCount, format: .number.grouping(.never))/\(SubscriptionManager.freeAnniversaryAlarmsAllowed, format: .number.grouping(.never))")
-                  .font(.appCaption())
-              }
-              .foregroundColor(alarmCount >= SubscriptionManager.freeAnniversaryAlarmsAllowed ? .red : .black.opacity(0.8))
-            }
+            Text("Doodle today free — Pro fills any day")
+              .font(.appSubheadline())
+              .foregroundColor(.black.opacity(0.8))
           }
         }
         .padding(.horizontal, 16)
@@ -204,7 +188,6 @@ struct SettingsView: View {
   @State private var showTrialStatus = false
   @State private var showLimitedTimeOffer = false
   @State private var showTrialClaim = false
-  @State private var currentJoodleCount: Int = 0
 
   @State private var showRedeemCode = false
   @State private var showFaq = false
@@ -400,10 +383,7 @@ struct SettingsView: View {
       Task {
         await StoreKitManager.shared.updatePurchasedProducts()
         await subscriptionManager.updateSubscriptionStatus()
-        if !subscriptionManager.hasPremiumAccess {
-          currentJoodleCount = subscriptionManager.fetchTotalJoodleCount(in: modelContext)
-        }
-        
+
         // Check if app update is available
         await checkForAppUpdate()
       }
@@ -498,8 +478,6 @@ struct SettingsView: View {
         isInGracePeriod: !subscriptionManager.isSubscribed && GracePeriodManager.shared.isInGracePeriod,
         gracePeriodDaysRemaining: GracePeriodManager.shared.gracePeriodDaysRemaining,
         statusMessage: subscriptionManager.subscriptionStatusMessage,
-        joodleCount: currentJoodleCount,
-        alarmCount: reminderManager.reminders.count,
         onTap: {
           if subscriptionManager.isSubscribed {
             showSubscriptions = true
@@ -3026,8 +3004,6 @@ struct MembershipBannerPreviewView: View {
   
   enum BannerPreviewState: String, CaseIterable {
     case free = "Free User"
-    case freeNearLimit = "Free (Near Limit)"
-    case freeAtLimit = "Free (At Limit)"
     case gracePeriod = "Grace Period (5 days)"
     case gracePeriodLastDay = "Grace Period (1 day)"
     case proActive = "Pro (Active)"
@@ -3054,8 +3030,6 @@ struct MembershipBannerPreviewView: View {
             isInGracePeriod: isInGracePeriod,
             gracePeriodDaysRemaining: gracePeriodDaysRemaining,
             statusMessage: statusMessage,
-            joodleCount: joodleCount,
-            alarmCount: alarmCount,
             onTap: {}
           )
           .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
@@ -3073,7 +3047,7 @@ struct MembershipBannerPreviewView: View {
   
   private var hasPremiumAccess: Bool {
     switch selectedState {
-    case .free, .freeNearLimit, .freeAtLimit:
+    case .free:
       return false
     case .gracePeriod, .gracePeriodLastDay, .proActive, .proTrial, .proCancelled, .proExpiringSoon:
       return true
@@ -3119,32 +3093,6 @@ struct MembershipBannerPreviewView: View {
       return "Expires \(formatter.string(from: futureDate))"
     default:
       return nil
-    }
-  }
-  
-  private var joodleCount: Int {
-    switch selectedState {
-    case .free:
-      return 12
-    case .freeNearLimit:
-      return 28
-    case .freeAtLimit:
-      return 30
-    default:
-      return 0
-    }
-  }
-  
-  private var alarmCount: Int {
-    switch selectedState {
-    case .free:
-      return 2
-    case .freeNearLimit:
-      return 4
-    case .freeAtLimit:
-      return 5
-    default:
-      return 0
     }
   }
 }

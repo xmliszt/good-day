@@ -55,16 +55,6 @@ enum PremiumFeature: String, CaseIterable, Identifiable {
         }
     }
 
-    /// Free tier limits for features that have limits
-    var freeLimit: Int? {
-        switch self {
-        case .unlimitedJoodles:
-            return SubscriptionManager.freeJoodlesAllowed
-        default:
-            return nil
-        }
-    }
-
     /// Check if this feature is currently available
     /// Note: Must be called from MainActor context
     @MainActor
@@ -150,32 +140,6 @@ final class PremiumAccessController: ObservableObject {
         Task {
             await refreshSubscriptionStatus()
         }
-    }
-
-    /// Check if user can create a new Joodle based on current total count
-    func canCreateJoodle(currentTotalCount: Int) -> Bool {
-        if hasPremiumAccess {
-            return true
-        }
-        return currentTotalCount < (PremiumFeature.unlimitedJoodles.freeLimit ?? SubscriptionManager.freeJoodlesAllowed)
-    }
-
-    /// Check if user can edit a specific Joodle (by index in total order)
-    func canEditJoodle(atIndex index: Int) -> Bool {
-        if hasPremiumAccess {
-            return true
-        }
-        // Free users can only edit their first N Joodles
-        return index < (PremiumFeature.unlimitedJoodles.freeLimit ?? SubscriptionManager.freeJoodlesAllowed)
-    }
-
-    /// Get remaining Joodles for free users
-    func remainingJoodles(currentTotalCount: Int) -> Int {
-        if hasPremiumAccess {
-            return Int.max
-        }
-        let limit = PremiumFeature.unlimitedJoodles.freeLimit ?? SubscriptionManager.freeJoodlesAllowed
-        return max(0, limit - currentTotalCount)
     }
 
     // MARK: - Subscription Expiry Handling
@@ -402,38 +366,6 @@ struct PremiumGatedButton<Label: View>: View {
     }
 }
 
-/// View showing remaining Joodles for free users
-struct RemainingJoodlesIndicator: View {
-    let currentCount: Int
-    @ObservedObject private var accessController = PremiumAccessController.shared
-
-    var body: some View {
-        if !accessController.hasPremiumAccess {
-            let remaining = accessController.remainingJoodles(currentTotalCount: currentCount)
-
-            HStack(spacing: 4) {
-                Image(systemName: remaining > 0 ? "scribble.variable" : "lock.fill")
-                    .font(.appCaption())
-
-                if remaining > 0 {
-                    Text("\(remaining, format: .number.grouping(.never)) Joodles left")
-                        .font(.appCaption())
-                } else {
-                    Text("Limit reached")
-                        .font(.appCaption())
-                }
-            }
-            .foregroundColor(remaining > max(2, SubscriptionManager.freeJoodlesAllowed / 3) ? .secondary : (remaining > 0 ? .appAccent : .red))
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background(
-                Capsule()
-                    .fill(Color(.systemGray6))
-            )
-        }
-    }
-}
-
 /// Alert shown when subscription expires
 struct SubscriptionExpiredAlert: ViewModifier {
     @ObservedObject private var accessController = PremiumAccessController.shared
@@ -469,46 +401,6 @@ extension View {
     }
 }
 
-// MARK: - Joodle Access Helper
-
-/// Helper to check Joodle access based on entry index
-@MainActor
-struct JoodleAccessChecker {
-    /// Check if a Joodle can be edited based on its position in the total list
-    static func canEdit(entry: DayEntry, allEntries: [DayEntry]) -> Bool {
-        let accessController = PremiumAccessController.shared
-
-        // Subscribed users can edit any Joodle
-        if accessController.hasPremiumAccess {
-            return true
-        }
-
-        // Sort entries by date (oldest first) and find the index
-        let sortedEntries = allEntries
-            .filter { $0.drawingData != nil }
-            .sorted { $0.dateString < $1.dateString }
-
-        guard let index = sortedEntries.firstIndex(where: { $0.id == entry.id }) else {
-            // Entry not found or has no drawing - allow editing (creating new)
-            return true
-        }
-
-        return accessController.canEditJoodle(atIndex: index)
-    }
-
-    /// Get all entries that have drawings
-    static func entriesWithDrawings(from entries: [DayEntry]) -> [DayEntry] {
-        return entries.filter { entry in
-            entry.drawingData != nil
-        }
-    }
-
-    /// Count total Joodles across all entries
-    static func totalJoodleCount(from entries: [DayEntry]) -> Int {
-        return entriesWithDrawings(from: entries).count
-    }
-}
-
 // MARK: - Preview
 
 #Preview("Premium Badge") {
@@ -517,10 +409,6 @@ struct JoodleAccessChecker {
             .padding()
             .background(Color.blue)
             .withPremiumBadge(.allShareTemplates)
-
-        RemainingJoodlesIndicator(currentCount: 55)
-
-        RemainingJoodlesIndicator(currentCount: 60)
 
         PremiumFeatureBadge()
     }
