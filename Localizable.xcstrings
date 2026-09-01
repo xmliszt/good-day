@@ -24895,6 +24895,46 @@
         }
       }
     },
+    "This can't be undone. On Free you can only doodle today, so this day will stay empty." : {
+      "localizations" : {
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cette action est irréversible. En gratuit, vous ne pouvez doodler qu'aujourd'hui : ce jour restera vide."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この操作は取り消せません。無料版で描けるのは今日だけなので、この日は空のままになります。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이 작업은 되돌릴 수 없어요. 무료 플랜에서는 오늘만 그릴 수 있어서 이 날은 계속 비어 있게 됩니다."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bu işlem geri alınamaz. Ücretsiz sürümde yalnızca bugünü karalayabilirsin, bu yüzden bu gün boş kalacak."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此操作无法撤销。免费版只能画今天，所以这一天会一直空着。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此操作無法復原。免費版只能畫今天，所以這一天會一直空著。"
+          }
+        }
+      }
+    },
     "This device is not capable of making payments." : {
       "localizations" : {
         "fr" : {
