@@ -18,6 +18,21 @@ struct ProFeatureCarousel: View {
 
     var id: Self { self }
 
+    /// The card that best matches the paywall source that triggered this screen,
+    /// so the carousel opens on the feature the user was reaching for. Unmapped
+    /// sources fall back to the first card.
+    static func matching(source: String) -> Feature {
+      switch source {
+      case "auto_trace": return .autotrace
+      case "watermark_toggle", "wiggly_share_card": return .watermark
+      case "wiggly_strokes_toggle": return .wiggly
+      case "locked_color": return .rainbow
+      case "experimental_time_backdrop_toggle": return .backdrop
+      case "entry_limit", "doodle_limit": return .unlimited
+      default: return .unlimited
+      }
+    }
+
     var title: LocalizedStringResource {
       switch self {
       case .unlimited: return "Doodle every day, forever"
@@ -61,7 +76,12 @@ struct ProFeatureCarousel: View {
     }
   }
 
-  @State private var selection: Feature = .unlimited
+  @State private var selection: Feature
+
+  /// The paywall source that triggered this carousel; picks the starting card.
+  init(source: String = "unknown") {
+    _selection = State(initialValue: Feature.matching(source: source))
+  }
 
   private let showcaseHeight: CGFloat = 300
   private let cornerRadius: CGFloat = 28

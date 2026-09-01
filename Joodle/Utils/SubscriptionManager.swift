@@ -416,6 +416,13 @@ class SubscriptionManager: ObservableObject {
             UserPreferences.shared.shareCardWatermarkEnabled = false
         }
 
+        // Auto-enable auto-trace so the button is there to discover the moment a
+        // free user converts. Free users can't have turned it on (it's gated), so
+        // enabling on the transition can't override a deliberate off.
+        if !UserPreferences.shared.isAutoTraceEnabled {
+            UserPreferences.shared.isAutoTraceEnabled = true
+        }
+
         // Update widget subscription status
         WidgetHelper.shared.updateSubscriptionStatus()
 

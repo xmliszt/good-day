@@ -546,7 +546,7 @@ struct PaywallContentView: View {
   private var contextBody: some View {
     switch configuration.context {
     case .trialStatus:
-      ProFeatureCarousel()
+      ProFeatureCarousel(source: configuration.paywallSource)
       TrialTimelineView(style: .trial, progress: GracePeriodManager.shared.gracePeriodProgress)
       ProComparisonTable()
       if showEarlyUpgrade {
@@ -561,7 +561,7 @@ struct PaywallContentView: View {
       // The pay surfaces all share the same skeleton: value carousel,
       // Free-vs-Pro comparison, plans, CTA. Header copy (and the floating
       // skip button in onboarding) carry the contextual differences.
-      ProFeatureCarousel()
+      ProFeatureCarousel(source: configuration.paywallSource)
       ProComparisonTable()
       pricingSection
       ctaSection
