@@ -189,6 +189,33 @@ class SubscriptionManager: ObservableObject {
         return legacyGraceExists ? legacyFreeJoodlesAllowed : baseFreeJoodlesAllowed
     }
 
+    // MARK: - Day-Scoped Doodle Gate (additive; replaces the lifetime cap above)
+
+    /// Result of `resolveDoodleGate`. `.dayLocked` takes precedence over
+    /// `.dailyLimitReached` — "this isn't today" is checked before the count,
+    /// since that's the reason backfill/future days are blocked for free users.
+    enum DoodleGate: Equatable {
+        case allowed
+        case dayLocked          // not today, and not Pro
+        case dailyLimitReached  // today, but the free 1-a-day is used up
+    }
+
+    /// Free users may draw one doodle per day, only on today.
+    nonisolated static let freeDoodlesPerDay = 1
+
+    /// Pure, unit-testable. `existingDoodleCount` is the doodle count already on the
+    /// target day; `hasPremiumAccess` bypasses everything.
+    nonisolated static func resolveDoodleGate(
+        on date: Date,
+        existingDoodleCount: Int,
+        hasPremiumAccess: Bool,
+        now: Date = Date()
+    ) -> DoodleGate {
+        if hasPremiumAccess { return .allowed }
+        guard Calendar.current.isDate(date, inSameDayAs: now) else { return .dayLocked }
+        return existingDoodleCount < freeDoodlesPerDay ? .allowed : .dailyLimitReached
+    }
+
     // Free plan limits - maximum anniversary alarms allowed for free users
     nonisolated static let freeAnniversaryAlarmsAllowed = 5
 
@@ -774,5 +801,37 @@ class SubscriptionManager: ObservableObject {
             return true
         }
         return index < Self.freeJoodlesAllowed
+    }
+
+    // MARK: - Day-Scoped Doodle Gate (additive - uses cached state)
+
+    /// Synchronous check - uses cached subscription state
+    /// For critical access points, use doodleGateWithVerification(on:existingDoodleCount:) first
+    func doodleGate(on date: Date, existingDoodleCount: Int) -> DoodleGate {
+        Self.resolveDoodleGate(
+            on: date,
+            existingDoodleCount: existingDoodleCount,
+            hasPremiumAccess: hasPremiumAccess
+        )
+    }
+
+    /// Async access check with online verification
+    /// Use this before allowing creation of a new doodle
+    func doodleGateWithVerification(on date: Date, existingDoodleCount: Int) async -> DoodleGate {
+        let hasAccess = await verifySubscriptionForAccess()
+        return Self.resolveDoodleGate(
+            on: date,
+            existingDoodleCount: existingDoodleCount,
+            hasPremiumAccess: hasAccess
+        )
+    }
+
+    func canDrawJoodle(on date: Date, existingDoodleCount: Int) -> Bool {
+        doodleGate(on: date, existingDoodleCount: existingDoodleCount) == .allowed
+    }
+
+    /// Backfilling/rescheduling a doodle to a different day is a Pro-only move.
+    func canMoveJoodle() -> Bool {
+        hasPremiumAccess
     }
 }
