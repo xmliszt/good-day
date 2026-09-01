@@ -561,9 +561,9 @@ struct EntryEditingView: View {
         // Deleting the only doodle on a past day is irreversible for a free
         // user — that day can never be redrawn since Free is today-only.
         if !subscriptionManager.hasPremiumAccess && !isToday && entry?.doodleCount == 1 {
-          Text("Delete this doodle? This cannot be undone.")
-            + Text("\n")
-            + Text("This can't be undone. On Free you can only doodle today, so this day will stay empty.")
+          // Replaces the standard message rather than appending to it — this
+          // string already carries the "can't be undone" warning itself.
+          Text("This can't be undone. On Free you can only doodle today, so this day will stay empty.")
         } else {
           Text("Delete this doodle? This cannot be undone.")
         }
