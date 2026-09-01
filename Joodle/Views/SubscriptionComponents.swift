@@ -120,8 +120,8 @@ struct TrialTimelineView: View {
 // MARK: - Pro Comparison Table
 
 /// A Free-vs-Pro comparison table for the expired/pay paywall.
-/// Shows concrete free values (e.g. "30", "5") rather than meaningless checkmarks,
-/// so the gap between Free and Pro is visceral.
+/// Shows concrete free values (e.g. "Today only", "1") rather than meaningless
+/// checkmarks, so the gap between Free and Pro is visceral.
 struct ProComparisonTable: View {
   private struct ComparisonRow: Identifiable {
     let id = UUID()
@@ -138,10 +138,13 @@ struct ProComparisonTable: View {
 
   private var rows: [ComparisonRow] {
     [
-      ComparisonRow(label: "Joodle entries",
-                    free: "\(SubscriptionManager.freeJoodlesAllowed)", pro: "Unlimited", proIsUnlimited: true),
-      ComparisonRow(label: "Anniversary alarms",
-                    free: "\(SubscriptionManager.freeAnniversaryAlarmsAllowed)", pro: "Unlimited", proIsUnlimited: true),
+      // Day scope first, then the per-day count — the order a user runs into them.
+      // Neither is flagged unlimited: "Any day" and "Up to 3" read better without
+      // the ∞ glyph, which keeps ∞ meaning "a number we removed".
+      ComparisonRow(label: "Doodle days",
+                    free: String(localized: "Today only"), pro: "Any day", proIsUnlimited: false),
+      ComparisonRow(label: "Doodles a day",
+                    free: "1", pro: "Up to 3", proIsUnlimited: false),
       ComparisonRow(label: "Auto trace",
                     free: String(localized: "Once a day"), pro: "Unlimited", proIsUnlimited: true),
       ComparisonRow(label: "Widgets",
