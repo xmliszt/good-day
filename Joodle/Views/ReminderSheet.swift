@@ -10,7 +10,6 @@ struct ReminderSheet: View {
 
     @StateObject private var reminderManager = ReminderManager.shared
     @State private var selectedTime: Date
-    @State private var showPaywall = false
     @State private var showPastTimeAlert = false
     @State private var showNotificationDeniedAlert = false
 
@@ -137,13 +136,9 @@ struct ReminderSheet: View {
                             }
 
                             // Now add the reminder
-                            let success = await reminderManager.addReminder(for: dateString, at: combinedReminderDate, entryBody: entryBody)
+                            await reminderManager.addReminder(for: dateString, at: combinedReminderDate, entryBody: entryBody)
                             await MainActor.run {
-                                if success {
-                                    dismiss()
-                                } else {
-                                    showPaywall = true
-                                }
+                                dismiss()
                             }
                         }
                     }
@@ -179,9 +174,6 @@ struct ReminderSheet: View {
                         .foregroundStyle(.red)
                     }
                 }
-            }
-            .sheet(isPresented: $showPaywall) {
-                StandalonePaywallView(source: "reminder")
             }
             .alert("Invalid Alarm Time", isPresented: $showPastTimeAlert) {
                 Button("OK", role: .cancel) { }
