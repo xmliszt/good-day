@@ -61,6 +61,8 @@ struct ContentView: View {
   @State private var moveTargetDate: Date?
   /// Whether to show the move confirmation alert
   @State private var showMoveConfirmation = false
+  /// Whether to show the Pro paywall gating move-doodle for free users
+  @State private var showMovePaywall = false
   // --- END MOVE DRAWING STATE ---
 
   @State private var yearGridViewSize: CGSize = .zero
@@ -979,6 +981,9 @@ struct ContentView: View {
     .sheet(isPresented: $showAutoTracePaywall) {
       StandalonePaywallView(source: "auto_trace_limit")
     }
+    .sheet(isPresented: $showMovePaywall) {
+      StandalonePaywallView(source: "move_doodle")
+    }
     .alert(String(localized: "Move Doodle"), isPresented: $showMoveConfirmation) {
       Button(String(localized: "Move"), role: .none) {
         executeMoveDrawing()
@@ -1330,6 +1335,11 @@ struct ContentView: View {
 
   /// Enter move drawing mode — store source entry and collapse bottom panel
   private func enterMoveDrawingMode(doodleIndex: Int) {
+    guard subscriptionManager.canMoveJoodle() else {
+      showMovePaywall = true
+      return
+    }
+
     guard let entry = selectedEntry,
           entry.doodles.indices.contains(doodleIndex),
           let date = dataProvider.selectedDateItem?.date
@@ -1404,6 +1414,12 @@ struct ContentView: View {
 
   /// Execute the drawing move from source to target date
   private func executeMoveDrawing() {
+    // Defensive re-check: a subscription may have lapsed mid-flow.
+    guard subscriptionManager.canMoveJoodle() else {
+      exitMoveDrawingMode(reselectSource: true)
+      return
+    }
+
     guard let targetDate = moveTargetDate,
           let sourceDate = moveSourceDate
     else { return }
