@@ -12,11 +12,17 @@ import UIKit
 
 // MARK: - Joodle Access State
 
+/// Day-scoped access for the slot this canvas is pointed at. There is no
+/// "editing locked" case on purpose: an already-drawn doodle is editable by
+/// everyone, on any day, forever — that guarantee holds by construction here
+/// rather than by a runtime check.
 enum JoodleAccessState {
   case canCreate
   case canEdit
-  case limitReached
-  case editingLocked(reason: String)
+  /// Free plan: this day is not today, so filling it in is Pro-only.
+  case dayLocked
+  /// Free plan: today already holds its one free doodle.
+  case dailyLimitReached
 }
 
 // MARK: - Drawing Canvas View with Thumbnail Generation
@@ -209,7 +215,7 @@ struct DrawingCanvasView: View {
     switch accessState {
     case .canCreate, .canEdit:
       return true
-    case .limitReached, .editingLocked:
+    case .dayLocked, .dailyLimitReached:
       return false
     }
   }
@@ -550,7 +556,7 @@ struct DrawingCanvasView: View {
       Text("Clear all drawing?")
     }
     .sheet(isPresented: $showPaywall) {
-      StandalonePaywallView(source: "entry_limit")
+      StandalonePaywallView(source: "backfill")
     }
     .sheet(isPresented: $showTrialClaim) {
       TrialClaimPaywallView(source: "entry_limit")
@@ -627,6 +633,17 @@ struct DrawingCanvasView: View {
     trialOfferManager.isClaimOfferAvailable
   }
 
+  /// The subtitle under a lock title: the trial-claim pitch when a claimable
+  /// free trial is available, otherwise the lock state's own upgrade message.
+  private func lockMessage(_ message: Text) -> some View {
+    (canOfferTrialClaim
+      ? Text("Your next 7 days of doodling can be free — Joodle Pro, on us")
+      : message)
+      .font(.appSubheadline())
+      .foregroundColor(.appTextPrimary.opacity(0.8))
+      .multilineTextAlignment(.center)
+  }
+
   private var accessDeniedOverlay: some View {
     VStack(spacing: 16) {
       Image(systemName: "lock.fill")
@@ -634,39 +651,29 @@ struct DrawingCanvasView: View {
         .foregroundColor(.appTextPrimary)
 
       switch accessState {
-      case .limitReached:
-        Text("You've reached your free Joodle limit")
+      case .dayLocked:
+        Text("Free lets you doodle today")
           .font(.appHeadline())
           .foregroundColor(.appTextPrimary)
           .multilineTextAlignment(.center)
 
-        if canOfferTrialClaim {
-          Text("Your next 7 days of doodling can be free — Joodle Pro, on us")
-            .font(.appSubheadline())
-            .foregroundColor(.appTextPrimary.opacity(0.8))
-            .multilineTextAlignment(.center)
-        } else {
-          Text("Upgrade to Joodle Pro for unlimited Joodles")
-            .font(.appSubheadline())
-            .foregroundColor(.appTextPrimary.opacity(0.8))
-            .multilineTextAlignment(.center)
-        }
+        lockMessage(Text("Upgrade to fill in any day and complete your year."))
 
-      case .editingLocked(let reason):
-        Text("Editing Locked")
+      case .dailyLimitReached:
+        Text("Free is one doodle a day")
           .font(.appHeadline())
           .foregroundColor(.appTextPrimary)
-
-        Text(reason)
-          .font(.appSubheadline())
-          .foregroundColor(.appTextPrimary.opacity(0.8))
           .multilineTextAlignment(.center)
+
+        lockMessage(Text("Upgrade to add up to three doodles to any day."))
 
       default:
         EmptyView()
       }
 
-      if canOfferTrialClaim, case .limitReached = accessState {
+      // The overlay only renders while access is denied, so a claimable trial
+      // always merchandises the claim instead of the purchase paywall here.
+      if canOfferTrialClaim {
         Button {
           showTrialClaim = true
         } label: {
@@ -833,43 +840,31 @@ struct DrawingCanvasView: View {
   // MARK: - Access Check
 
   private func checkAccessState() {
-    // Perform async verification with online check
+    // Grandfathering, by construction: a slot that already holds a doodle is
+    // editable by everyone on any day. Asking this FIRST — and never consulting
+    // the gate for it — is what makes an existing doodle impossible to lock out.
+    if slotHasDoodle {
+      accessState = .canEdit
+      return
+    }
+
+    // Empty slot: the day-scoped gate decides, with an online verification pass.
+    // It runs once, on open — a drawing started at 23:59 stays on the day it
+    // was opened; we deliberately never re-check on save.
     Task {
-      // Check if this is an existing Joodle (editing) or new Joodle (creating)
-      let hasExistingDrawing = entry?.drawingData != nil
+      let gate = await subscriptionManager.doodleGateWithVerification(
+        on: date,
+        existingDoodleCount: entry?.doodleCount ?? 0
+      )
 
-      if hasExistingDrawing, let entry = entry {
-        // Editing existing - verify access with online check
-        let canEdit = await subscriptionManager.canEditJoodleWithVerification(entry: entry, in: modelContext)
-
-        await MainActor.run {
-          if canEdit {
-            accessState = .canEdit
-          } else {
-            // Calculate index for error message
-            let targetDateString = entry.dateString
-            let descriptor = FetchDescriptor<DayEntry>(
-              predicate: #Predicate<DayEntry> {
-                $0.drawingData != nil && $0.dateString < targetDateString
-              }
-            )
-            let index = (try? modelContext.fetchCount(descriptor)) ?? 0
-            accessState = .editingLocked(
-              reason:
-                String(localized: "Free account can only edit the first \(SubscriptionManager.freeJoodlesAllowed) Joodles. This Joodle is #\(index + 1).")
-            )
-          }
-        }
-      } else {
-        // Creating new - verify access with online check
-        let canCreate = await subscriptionManager.checkAccessWithVerification(in: modelContext)
-
-        await MainActor.run {
-          if canCreate {
-            accessState = .canCreate
-          } else {
-            accessState = .limitReached
-          }
+      await MainActor.run {
+        switch gate {
+        case .allowed:
+          accessState = .canCreate
+        case .dayLocked:
+          accessState = .dayLocked
+        case .dailyLimitReached:
+          accessState = .dailyLimitReached
         }
       }
     }

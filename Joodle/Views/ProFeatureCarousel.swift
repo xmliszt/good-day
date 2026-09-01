@@ -28,7 +28,9 @@ struct ProFeatureCarousel: View {
       case "wiggly_strokes_toggle": return .wiggly
       case "locked_color": return .rainbow
       case "experimental_time_backdrop_toggle": return .backdrop
-      case "entry_limit", "doodle_limit": return .unlimited
+      // The two count-based names predate the day-scoped model; they stay mapped
+      // so the trial-claim sheet and any lingering link still land on this card.
+      case "entry_limit", "doodle_limit", "backfill", "move_doodle": return .unlimited
       default: return .unlimited
       }
     }
@@ -46,7 +48,7 @@ struct ProFeatureCarousel: View {
 
     var subtitle: LocalizedStringResource {
       switch self {
-      case .unlimited: return "Free stops at \(SubscriptionManager.freeJoodlesAllowed) doodles. Pro keeps your whole year — and every year after."
+      case .unlimited: return "Free fills today, one doodle a day. Pro backfills any day — move, catch up, stack up to three, and complete your whole year."
       case .autotrace: return "Point Joodle at any photo and it sketches the outline for you. Free traces once a day — Pro, as many as you like."
       case .rainbow:   return "Let your year bloom into more vibrant colors, or all twelve shades of the rainbow theme."
       case .wiggly:    return "Give every stroke a lively, hand-drawn wiggle."
@@ -291,14 +293,20 @@ private func fittedTransform(bounds: CGRect, in rect: CGRect) -> (scale: CGFloat
 
 private let demoCellCount = 150
 private let demoGridColumns = 15
-private let demoFreeLimit = 30
+/// Where "today" sits in the demo year — about two thirds through, so the card
+/// has a visibly empty past to backfill and a shorter future still to come.
+private let demoTodayCell = 100
 
 // MARK: - Demo Badge
 
-/// The consistent state pill shown at the top of every card. It only ever says
-/// Free or Pro — the demo itself shows what changes, so the badge stays terse.
+/// The consistent state pill shown at the top of every card. It normally only
+/// says Free or Pro — the demo itself shows what changes, so the badge stays
+/// terse. `detail` is an opt-in qualifier for the one card whose story is a
+/// per-day *quantity* the grid can't legibly draw (1 free vs up to 3 Pro); every
+/// other card leaves it nil.
 private struct DemoBadge: View {
   let isPro: Bool
+  var detail: LocalizedStringResource? = nil
 
   var body: some View {
     HStack(spacing: 6) {
@@ -306,6 +314,11 @@ private struct DemoBadge: View {
         .font(.appFont(size: 11, weight: .bold))
       Text(isPro ? String(localized: "Pro") : String(localized: "Free"))
         .font(.appCaption(weight: .bold))
+      if let detail {
+        Text(detail)
+          .font(.appCaption())
+          .foregroundColor(.white.opacity(0.45))
+      }
     }
     .foregroundColor(isPro ? .appAccent : .white.opacity(0.6))
     .padding(.horizontal, 12)
@@ -317,65 +330,130 @@ private struct DemoBadge: View {
 
 // MARK: - Unlimited Doodles Demo
 
-/// Loops a fill from empty → the free cap (30) → the full year, so the jump from
-/// "limited" to "unlimited" is felt, not just read. Driven off a `TimelineView`
-/// clock (not `withAnimation`) because `Canvas` won't interpolate an animated
-/// `@State` — it would snap to the final frame.
+/// Loops the day-scoped story: free lights exactly one cell (today), then Pro
+/// backfills the empty past *backwards* from today before carrying on forwards
+/// through the rest of the year. The backward front is the point — a plain
+/// left-to-right fill would read as "keep going" instead of "catch up". Driven
+/// off a `TimelineView` clock (not `withAnimation`) because `Canvas` won't
+/// interpolate an animated `@State` — it would snap to the final frame.
 private struct UnlimitedDoodlesDemo: View {
   let isActive: Bool
   @State private var epoch = Date()
 
-  static let fillDuration = 1.8
-  static let freeHold = 1.4
-  static let proFillDuration = 2.4
-  static let proHold = 2.0
+  /// Today's single cell lighting up — one cell, so it needs no travel time.
+  static let todayFillDuration = 0.8
+  static let freeHold = 1.2
+  /// The catch-up beat: a front travelling from today back to the start of the year.
+  static let backfillDuration = 2.0
+  /// The rest of the year, filled forwards from today.
+  static let forwardFillDuration = 1.4
+  static let proHold = 1.8
   static let drainDuration = 1.3
   static let emptyHold = 0.8
 
   /// One full loop, including the drain-and-reset tail — only seen if the viewer
   /// lingers past the carousel's dwell.
   static var cycleDuration: Double {
-    fillDuration + freeHold + proFillDuration + proHold + drainDuration + emptyHold
+    playThroughDuration + drainDuration + emptyHold
   }
 
-  /// Time to reach the end of the story beat (the full-year Pro reveal). The
-  /// carousel advances after this plus its trailing delay, before the drain.
+  /// Time to reach the end of the story beat (the complete year). The carousel
+  /// advances after this plus its trailing delay, before the drain.
   static var playThroughDuration: Double {
-    fillDuration + freeHold + proFillDuration + proHold
+    todayFillDuration + freeHold + backfillDuration + forwardFillDuration + proHold
   }
 
-  /// Fill fraction (0…1) for a point in the loop, eased through each phase.
-  private func fill(at time: Double) -> Double {
-    let freeFraction = Double(demoFreeLimit) / Double(demoCellCount)
+  /// The demo's two wavefronts plus the erase tail, for a point in the loop.
+  ///
+  /// - `today`: alpha of today's cell, the only thing free lights up.
+  /// - `backFront`: descends from `demoTodayCell` to −1; a past day is drawn once
+  ///   the front has travelled below it.
+  /// - `forwardFront`: ascends from `demoTodayCell` to `demoCellCount`.
+  /// - `eraseFront`: descends through the grid during the reset tail, clearing
+  ///   what the two fronts drew; parked past the end for the rest of the loop.
+  private struct Beat {
+    var today: Double
+    var backFront: Double
+    var forwardFront: Double
+    var eraseFront: Double
+    var isPro: Bool
+  }
+
+  private func beat(at time: Double) -> Beat {
+    let today = Double(demoTodayCell)
+    let end = Double(demoCellCount)
+    // Parked one ramp past the last cell, so nothing is being erased.
+    let noErase = end + 1
+
     var x = time.truncatingRemainder(dividingBy: Self.cycleDuration)
 
-    if x < Self.fillDuration { return freeFraction * smoothstep(x / Self.fillDuration) }
-    x -= Self.fillDuration
-    if x < Self.freeHold { return freeFraction }
+    if x < Self.todayFillDuration {
+      return Beat(today: smoothstep(x / Self.todayFillDuration),
+                  backFront: today, forwardFront: today, eraseFront: noErase, isPro: false)
+    }
+    x -= Self.todayFillDuration
+    if x < Self.freeHold {
+      return Beat(today: 1, backFront: today, forwardFront: today, eraseFront: noErase, isPro: false)
+    }
     x -= Self.freeHold
-    if x < Self.proFillDuration { return freeFraction + (1 - freeFraction) * smoothstep(x / Self.proFillDuration) }
-    x -= Self.proFillDuration
-    if x < Self.proHold { return 1 }
+    if x < Self.backfillDuration {
+      // today → −1, so cell 0 lands fully drawn at the end of the beat.
+      let p = smoothstep(x / Self.backfillDuration)
+      return Beat(today: 1,
+                  backFront: today - (today + 1) * p,
+                  forwardFront: today, eraseFront: noErase, isPro: true)
+    }
+    x -= Self.backfillDuration
+    if x < Self.forwardFillDuration {
+      let p = smoothstep(x / Self.forwardFillDuration)
+      return Beat(today: 1, backFront: -1,
+                  forwardFront: today + (end - today) * p,
+                  eraseFront: noErase, isPro: true)
+    }
+    x -= Self.forwardFillDuration
+    if x < Self.proHold {
+      return Beat(today: 1, backFront: -1, forwardFront: end, eraseFront: noErase, isPro: true)
+    }
     x -= Self.proHold
-    if x < Self.drainDuration { return 1 - smoothstep(x / Self.drainDuration) }
-    return 0
+    if x < Self.drainDuration {
+      return Beat(today: 1, backFront: -1, forwardFront: end,
+                  eraseFront: noErase - (noErase + 1) * smoothstep(x / Self.drainDuration),
+                  isPro: true)
+    }
+    return Beat(today: 0, backFront: today, forwardFront: today, eraseFront: noErase, isPro: false)
+  }
+
+  /// Ramp of 1: a soft leading edge wider than one cell can't fully resolve when
+  /// a front parks on an integer plateau (today, then the year's two ends), which
+  /// would leave the last doodles frozen half-faded. One cell keeps them crisp.
+  private static let ramp = 1.0
+
+  private func alpha(day: Int, beat: Beat) -> Double {
+    let drawn: Double
+    if day == demoTodayCell {
+      drawn = beat.today
+    } else if day < demoTodayCell {
+      // Mirror of `frontAlpha`: lit once the backward front has passed below.
+      drawn = min(max((Double(day) - beat.backFront) / Self.ramp, 0), 1)
+    } else {
+      drawn = frontAlpha(front: beat.forwardFront, day: day, ramp: Self.ramp)
+    }
+    return min(drawn, frontAlpha(front: beat.eraseFront, day: day, ramp: Self.ramp))
   }
 
   var body: some View {
     TimelineView(.animation(paused: !isActive)) { timeline in
-      let front = fill(at: timeline.date.timeIntervalSince(epoch)) * Double(demoCellCount)
-      let isPro = front > Double(demoFreeLimit) + 0.5
+      let beat = beat(at: timeline.date.timeIntervalSince(epoch))
 
       VStack(spacing: 14) {
-        DemoBadge(isPro: isPro)
+        DemoBadge(
+          isPro: beat.isPro,
+          detail: beat.isPro ? "Any day, up to 3" : "Today, 1 a day"
+        )
         YearGridCanvas(
           totalDays: demoCellCount,
           columns: demoGridColumns,
-          // Ramp of 1: a soft leading edge wider than one cell can't fully
-          // resolve when the front parks on an integer plateau (the free cap of
-          // 30, then the full year), which would leave the last doodles frozen
-          // half-faded. One cell keeps both plateaus crisp.
-          doodle: { day in frontAlpha(front: front, day: day, ramp: 1) }
+          doodle: { day in alpha(day: day, beat: beat) }
         )
       }
     }
