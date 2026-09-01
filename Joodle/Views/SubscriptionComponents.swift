@@ -143,7 +143,7 @@ struct ProComparisonTable: View {
       ComparisonRow(label: "Anniversary alarms",
                     free: "\(SubscriptionManager.freeAnniversaryAlarmsAllowed)", pro: "Unlimited", proIsUnlimited: true),
       ComparisonRow(label: "Auto trace",
-                    free: "—", pro: "Unlimited usage", proIsUnlimited: false),
+                    free: String(localized: "Once a day"), pro: "Unlimited", proIsUnlimited: true),
       ComparisonRow(label: "Widgets",
                     free: "—", pro: "All widgets", proIsUnlimited: false),
       ComparisonRow(label: "Sharing",

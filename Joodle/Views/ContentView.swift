@@ -23,10 +23,18 @@ struct ContentView: View {
 
   @Binding var selectedDateFromWidget: Date?
 
-  /// The auto-trace button is a Pro feature the user opts into: it shows only
-  /// when the setting is on and the user has premium access.
+  /// The auto-trace button shows whenever the user has opted into it. It's no
+  /// longer Pro-gated at the switch — free users get a daily allowance and hit
+  /// the paywall on the button itself once it's spent (see `autoTraceRemaining`).
   private var autoTraceButtonVisible: Bool {
-    userPreferences.isAutoTraceEnabled && subscriptionManager.hasPremiumAccess
+    userPreferences.isAutoTraceEnabled
+  }
+
+  /// Remaining traces to show on the button's count badge, and the value that
+  /// locks it: `nil` for Pro (unlimited — badge shows infinity), otherwise the
+  /// free user's remaining daily allowance (`0` locks the button to the paywall).
+  private var autoTraceRemaining: Int? {
+    subscriptionManager.hasPremiumAccess ? nil : autoTraceQuota.remaining
   }
 
   // --- GESTURE STATE ---
@@ -114,6 +122,11 @@ struct ContentView: View {
   /// opposite corner for the session. Reset when a new reference photo appears,
   /// so the button always returns to the handedness side (JOO relocate spec).
   @State private var autoTraceCornerOverride: AutoTraceButton.Corner?
+
+  /// Tracks the free user's daily auto-trace allowance (persisted in iCloud KVS).
+  @State private var autoTraceQuota = AutoTraceQuotaManager.shared
+  /// Presents the paywall when a free user taps the exhausted auto-trace button.
+  @State private var showAutoTracePaywall = false
 
   private let headerHeight: CGFloat = 100.0
 
@@ -855,7 +868,21 @@ struct ContentView: View {
           corner: resolvedCorner,
           activeDetail: $cameraContext.autoTraceDetail,
           isTracing: cameraContext.isAutoTracing,
-          onTrace: { level in cameraContext.requestAutoTrace(detail: level) },
+          remainingCount: autoTraceRemaining,
+          onTrace: { level in
+            // Pro traces freely; a free user spends one daily allowance per
+            // trace. The button locks itself at zero, so `onTrace` never fires
+            // once the allowance is gone — this is the only place it's consumed.
+            if subscriptionManager.hasPremiumAccess {
+              cameraContext.requestAutoTrace(detail: level)
+            } else if autoTraceQuota.remaining > 0 {
+              autoTraceQuota.consume()
+              cameraContext.requestAutoTrace(detail: level)
+            }
+          },
+          onLockedTap: {
+            showAutoTracePaywall = true
+          },
           onRelocate: { newCorner in autoTraceCornerOverride = newCorner },
           // Hide the showing stage for the whole press so the bubble never sits
           // over the fan buttons (or swaps in the next stage's bubble over the
@@ -912,6 +939,9 @@ struct ContentView: View {
     // side — a prior across-the-screen relocation lasts only that session.
     .onChange(of: cameraContext.backdropImage) { _, _ in
       autoTraceCornerOverride = nil
+      // A fresh reference is when the button reappears — make sure its badge
+      // reflects the current allowance (e.g. after a midnight rollover).
+      autoTraceQuota.refresh()
     }
     // Track the floating canvas's bottom edge so the photo-adjust console can
     // stay clear of it.
@@ -945,6 +975,9 @@ struct ContentView: View {
       LaunchModalCoordinator.shared.release(.trialClaim)
     }) {
       TrialClaimPaywallView(source: "doodle_limit")
+    }
+    .sheet(isPresented: $showAutoTracePaywall) {
+      StandalonePaywallView(source: "auto_trace_limit")
     }
     .alert(String(localized: "Move Doodle"), isPresented: $showMoveConfirmation) {
       Button(String(localized: "Move"), role: .none) {
@@ -1016,6 +1049,9 @@ struct ContentView: View {
         // iOS may never wake the BGProcessingTask if the user rarely opens the
         // app. Catch up on foreground if the last auto-backup is overdue.
         BackupScheduler.shared.runBackupIfOverdue()
+        // The day may have rolled over (or iCloud synced a trace from another
+        // device) while backgrounded — re-read the auto-trace allowance.
+        autoTraceQuota.refresh()
       default:
         break
       }

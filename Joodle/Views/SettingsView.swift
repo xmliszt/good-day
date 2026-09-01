@@ -634,32 +634,23 @@ struct SettingsView: View {
         }
       }
 
-      // Auto Trace (Pro). The whole feature is gated: subscribers open the detail
-      // settings, free users get the paywall and see a Pro badge on the row.
-      if subscriptionManager.hasPremiumAccess {
-        NavigationLink {
-          AutoTraceSettingsView()
-            // Navigating in resolves the tip. Done here rather than via a `.tap`
-            // resolution because a tap gesture on the row competes with the
-            // NavigationLink's own hit testing (see FeatureTipAnchorModifier),
-            // leaving the row not fully tappable.
-            .onAppear {
-              FeatureTipManager.shared.markSeen(FeatureTipDefinitions.TipID.autoTraceSettingsRow)
-            }
-        } label: {
-          autoTraceRowLabel
-        }
-        // Frame-reporting only (`.none`) — the row stays fully tappable; the tip
-        // is Pro-only so only this branch carries it.
-        .featureTip(FeatureTipDefinitions.AnchorID.autoTraceSettingsRow, resolution: .none)
-      } else {
-        Button {
-          paywallSource = "auto_trace"
-          showPaywall = true
-        } label: {
-          autoTraceRowLabel
-        }
+      // Auto Trace. No longer Pro-gated at the switch — everyone can toggle it
+      // and open the detail settings. Free users get a daily allowance and meet
+      // the paywall on the camera button itself once it's spent.
+      NavigationLink {
+        AutoTraceSettingsView()
+          // Navigating in resolves the tip. Done here rather than via a `.tap`
+          // resolution because a tap gesture on the row competes with the
+          // NavigationLink's own hit testing (see FeatureTipAnchorModifier),
+          // leaving the row not fully tappable.
+          .onAppear {
+            FeatureTipManager.shared.markSeen(FeatureTipDefinitions.TipID.autoTraceSettingsRow)
+          }
+      } label: {
+        autoTraceRowLabel
       }
+      // Frame-reporting only (`.none`) — the row stays fully tappable.
+      .featureTip(FeatureTipDefinitions.AnchorID.autoTraceSettingsRow, resolution: .none)
 
       // Backup & Restore
       NavigationLink {
@@ -730,9 +721,6 @@ struct SettingsView: View {
       SettingsIconView(systemName: "lasso.and.sparkles", backgroundColor: .pink)
       Text("Auto Trace")
         .foregroundColor(.primary)
-      if !subscriptionManager.hasPremiumAccess {
-        PremiumFeatureBadge()
-      }
       Spacer()
     }
   }

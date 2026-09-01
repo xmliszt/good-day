@@ -23,7 +23,7 @@ struct ProFeatureCarousel: View {
     /// sources fall back to the first card.
     static func matching(source: String) -> Feature {
       switch source {
-      case "auto_trace": return .autotrace
+      case "auto_trace", "auto_trace_limit": return .autotrace
       case "watermark_toggle", "wiggly_share_card": return .watermark
       case "wiggly_strokes_toggle": return .wiggly
       case "locked_color": return .rainbow
@@ -47,7 +47,7 @@ struct ProFeatureCarousel: View {
     var subtitle: LocalizedStringResource {
       switch self {
       case .unlimited: return "Free stops at \(SubscriptionManager.freeJoodlesAllowed) doodles. Pro keeps your whole year — and every year after."
-      case .autotrace: return "Point Joodle at any photo and it sketches the outline for you — a head start you finish by hand."
+      case .autotrace: return "Point Joodle at any photo and it sketches the outline for you. Free traces once a day — Pro, as many as you like."
       case .rainbow:   return "Let your year bloom into more vibrant colors, or all twelve shades of the rainbow theme."
       case .wiggly:    return "Give every stroke a lively, hand-drawn wiggle."
       case .watermark: return "Free adds a small Joodle mark. Pro exports are clean — just your doodle."

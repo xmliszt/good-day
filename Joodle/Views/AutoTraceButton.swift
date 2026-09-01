@@ -43,8 +43,15 @@ struct AutoTraceButton: View {
   @Binding var activeDetail: AutoTraceDetail
   /// True while a trace runs — the button goes busy and stops taking input.
   var isTracing: Bool
+  /// Traces the user has left before hitting the paywall. `nil` means unlimited
+  /// (Pro) — the badge then shows an infinity glyph. `0` locks the button: it
+  /// greys out, the fan is disabled, and a tap fires `onLockedTap` instead.
+  var remainingCount: Int?
   /// Fired on tap, and on release of a fan swipe that landed on a level.
   var onTrace: (AutoTraceDetail) -> Void
+  /// Fired when a tap lands on the exhausted (locked) button — the host opens
+  /// the paywall. Never called while `remainingCount` is non-zero or `nil`.
+  var onLockedTap: () -> Void = {}
   /// Fired when a press drags across to the opposite side of the screen.
   var onRelocate: (Corner) -> Void
   /// Fired the instant a press begins — before the fan blooms — so a feature tip
@@ -62,6 +69,14 @@ struct AutoTraceButton: View {
   /// Diameter of the glass button — `circularGlassButton` renders 40pt of content
   /// plus 2pt of padding all round.
   private static let buttonDiameter: CGFloat = 44
+  /// Diameter of the little count badge that hangs off the button's outer-top
+  /// corner — a sibling glass circle so a `GlassEffectContainer` necks it into
+  /// the button like the fan levels.
+  private static let badgeDiameter: CGFloat = 24
+  /// Distance from the button center to the badge center, along both axes — set
+  /// so the badge sits over the top-outer corner and its glass overlaps the
+  /// source enough to blend.
+  private static let badgeInset: CGFloat = 16
   /// Distance from the button center to each fanned-out level.
   private static let fanRadius: CGFloat = 68
   /// Hold this long, without moving, to bloom the fan. Dragging out into the
@@ -132,7 +147,17 @@ struct AutoTraceButton: View {
   /// leaves the fan standing; releasing a touch that started on an already
   /// open fan acts on what it landed on.
   @State private var fanOpenedThisTouch = false
+  /// Flips true on first appearance so the badge blooms out of the button
+  /// rather than being there from frame one.
+  @State private var badgeBloomed = false
   @Namespace private var glassNamespace
+
+  /// The free user has spent their daily allowance: the button greys out and a
+  /// tap opens the paywall instead of tracing.
+  private var isLocked: Bool { remainingCount == 0 }
+  /// The badge rides along whenever the button is idle — hidden while the fan is
+  /// out so it doesn't clutter the bloom.
+  private var badgeVisible: Bool { badgeBloomed && !fanOpen }
 
   private var fanOpen: Bool { phase == .fanned }
   /// Fan open with no finger on it — waiting for a tap.
@@ -182,6 +207,15 @@ struct AutoTraceButton: View {
       .environment(\.colorScheme, .dark)
       .contentShape(hitShape)
       .scaleEffect(pressScale)
+      // Locked (daily limit spent): dim to read as inactive. The badge and its
+      // own gesture stay live so a tap can still surface the paywall.
+      .opacity(isLocked ? 0.75 : 1)
+      .animation(.easeOut(duration: 0.2), value: isLocked)
+      .onAppear {
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
+          badgeBloomed = true
+        }
+      }
       // Simultaneous, not exclusive: the interactive glass installs its own
       // press recognizers, and an exclusive `.gesture` waits for those to fail
       // before it starts — the long-press timer would only begin ~0.5s after
@@ -212,8 +246,9 @@ struct AutoTraceButton: View {
       .accessibilityLabel(Text("Auto-trace", comment: "Button that converts the reference photo into a doodle"))
       .accessibilityValue(Text(activeDetail.accessibilityName))
       .accessibilityAddTraits(.isButton)
-      .accessibilityAction { onTrace(activeDetail) }
+      .accessibilityAction { isLocked ? onLockedTap() : onTrace(activeDetail) }
       .accessibilityAdjustableAction { direction in
+        guard !isLocked else { return }
         activeDetail = direction == .increment
           ? activeDetail.increased
           : activeDetail.decreased
@@ -235,6 +270,11 @@ struct AutoTraceButton: View {
           }
           sourceButton
             .glassEffectID("source", in: glassNamespace)
+          if badgeVisible {
+            countBadge
+              .glassEffectID("badge", in: glassNamespace)
+              .offset(badgeOffset)
+          }
         }
       }
     } else {
@@ -248,8 +288,47 @@ struct AutoTraceButton: View {
           }
         }
         sourceButton
+        if badgeVisible {
+          countBadge
+            .offset(badgeOffset)
+            .transition(.scale(scale: 0.2).combined(with: .opacity))
+        }
       }
     }
+  }
+
+  /// The count badge: a small glass circle showing the remaining free traces,
+  /// or an infinity glyph for Pro. Built to match the source button's glass so a
+  /// `GlassEffectContainer` blends the two into one shape.
+  @ViewBuilder
+  private var countBadge: some View {
+    Group {
+      if let remainingCount {
+        if remainingCount > 0 {
+          // Verbatim: a bare digit, not a localizable string (avoids a stray
+          // "%lld" catalog entry).
+          Text(verbatim: "\(remainingCount)")
+            .font(.appFont(size: 13, weight: .bold))
+            .monospacedDigit()
+        } else {
+          Image(systemName: "lock.fill")
+            .font(.appFont(size: 11, weight: .bold))
+        }
+      } else {
+        Image(systemName: "infinity")
+          .font(.appFont(size: 11, weight: .bold))
+      }
+    }
+    .foregroundStyle(Self.darkAccent)
+    .frame(width: Self.badgeDiameter, height: Self.badgeDiameter)
+    .modifier(BadgeGlassBackground(backgroundColor: glassBacking))
+  }
+
+  /// Offset from the button center to the badge center: up, and out toward the
+  /// screen edge the button hugs — top-right for a trailing button, top-left for
+  /// a leading one.
+  private var badgeOffset: CGSize {
+    CGSize(width: -corner.fanSign * Self.badgeInset, height: -Self.badgeInset)
   }
 
   private var sourceButton: some View {
@@ -288,7 +367,8 @@ struct AutoTraceButton: View {
     DragGesture(minimumDistance: 0, coordinateSpace: .local)
       .updating($isTouching) { _, touching, _ in touching = true }
       .onChanged { value in
-        guard !isTracing else { return }
+        // Locked or busy: the fan never blooms. A locked tap is handled on end.
+        guard !isTracing, !isLocked else { return }
 
         if !touchInProgress {
           touchInProgress = true
@@ -331,6 +411,17 @@ struct AutoTraceButton: View {
         let endedPhase = phase
         let landed = highlighted
         guard !isTracing else { collapse(); return }
+
+        // Exhausted daily allowance: a tap opens the paywall; there is no fan to
+        // land on, so a move that isn't a tap just does nothing.
+        if isLocked {
+          let moved = hypot(value.translation.width, value.translation.height)
+          if moved < 12 {
+            Haptic.play(with: .medium)
+            onLockedTap()
+          }
+          return
+        }
 
         switch endedPhase {
         case .pressing:
@@ -576,6 +667,32 @@ extension AutoTraceDetail {
   }
 }
 
+// MARK: - Badge glass
+
+/// Glass backing for the count badge, mirroring `CircularGlassButtonStyle` at a
+/// smaller circular size: on iOS 26 the `backgroundColor` tints the glass itself
+/// so it necks into the button inside a `GlassEffectContainer`; earlier systems
+/// fall back to a solid circular fill.
+private struct BadgeGlassBackground: ViewModifier {
+  let backgroundColor: Color?
+
+  @ViewBuilder
+  func body(content: Content) -> some View {
+    if #available(iOS 26, *) {
+      content.glassEffect(glass(tintedWith: backgroundColor), in: Circle())
+    } else {
+      content
+        .background(backgroundColor ?? .appSurface, in: Circle())
+    }
+  }
+
+  @available(iOS 26, *)
+  private func glass(tintedWith color: Color?) -> Glass {
+    let base = Glass.regular
+    return color.map { base.tint($0) } ?? base
+  }
+}
+
 // MARK: - Previews
 
 #Preview("Auto-trace button") {
@@ -590,7 +707,9 @@ extension AutoTraceDetail {
           corner: corner,
           activeDetail: $detail,
           isTracing: false,
+          remainingCount: 0,
           onTrace: { _ in },
+          onLockedTap: {},
           onRelocate: { corner = $0 },
           screenWidth: geo.size.width
         )

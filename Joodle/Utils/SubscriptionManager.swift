@@ -416,9 +416,9 @@ class SubscriptionManager: ObservableObject {
             UserPreferences.shared.shareCardWatermarkEnabled = false
         }
 
-        // Auto-enable auto-trace so the button is there to discover the moment a
-        // free user converts. Free users can't have turned it on (it's gated), so
-        // enabling on the transition can't override a deliberate off.
+        // Auto-enable auto-trace on conversion so the now-unlimited button is
+        // there to discover. A free user may have toggled it off deliberately,
+        // but surfacing the feature they just paid to uncap wins here.
         if !UserPreferences.shared.isAutoTraceEnabled {
             UserPreferences.shared.isAutoTraceEnabled = true
         }

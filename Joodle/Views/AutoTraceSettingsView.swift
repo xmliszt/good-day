@@ -3,10 +3,10 @@
 //  Joodle
 //
 //  Detail settings for the auto-trace feature, reached from the "Auto Trace" row
-//  in General. The row itself is Pro-gated, so only subscribers land here: a
-//  master toggle turns the camera's auto-trace button on or off, and a picker
-//  sets the detail level a single tap traces at. Everything below the toggle is
-//  disabled while auto-trace is off.
+//  in General. Open to everyone (free users get a daily allowance, Pro is
+//  unlimited): a master toggle turns the camera's auto-trace button on or off,
+//  and a picker sets the detail level a single tap traces at. Everything below
+//  the toggle is disabled while auto-trace is off.
 //
 
 import SwiftUI
