@@ -332,6 +332,10 @@ struct DrawingCanvasView: View {
           isDrawing: $isDrawing,
           buttonsConfig: canvasButtonsConfig,
           canvasCornerRadius: canvasCornerRadius,
+          // Locked days make the drawing surface inert and cover it with the
+          // paywall prompt, while the buttons row above stays reachable.
+          isCanvasInteractionDisabled: !isMockMode && !canEditOrCreate,
+          canvasOverlay: (!isMockMode && !canEditOrCreate) ? AnyView(accessDeniedOverlay) : nil,
           strokeColor: Color.appDrawingColor(for: date),
           backdropImage: cameraBackdropImage,
           backdropZoom: isCameraFeatureActive ? cameraContext.backdropZoom : 1.0,
@@ -373,7 +377,10 @@ struct DrawingCanvasView: View {
             }
           }
           .circularGlassButton()
-          .disabled(isSaving)
+          // Also gated on access: the buttons row stays live while the canvas is
+          // locked (so the user can leave), which would otherwise leave Save
+          // tappable on a day they aren't allowed to draw on.
+          .disabled(isSaving || !canEditOrCreate)
           .tutorialHighlightAnchor(.button(id: .canvasSaveButton), cornerRadius: 22)
           // Same gating rationale as the camera button's tip below: the canvas
           // stays tucked in the tree when collapsed, and the bubble must not
@@ -382,14 +389,7 @@ struct DrawingCanvasView: View {
             FeatureTipDefinitions.AnchorID.canvasFinish,
             isEnabled: isShowing && canEditOrCreate)
         }
-        .disabled(!canEditOrCreate)
         .background(Color.clear)
-        .overlay {
-          // Show lock overlay when access is denied (not in mock mode)
-          if !isMockMode && !canEditOrCreate {
-            accessDeniedOverlay
-          }
-        }
         .fixedSize(horizontal: false, vertical: true)
 
         // Inspiration prompt text — centered, below the canvas (hidden in tutorial mode)
