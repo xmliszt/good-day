@@ -704,6 +704,26 @@ struct DrawingCanvasView: View {
           .cornerRadius(32)
         }
       }
+
+      // The canvas's usual way out is the checkmark, which is correctly dead on
+      // a locked day, leaving only the tap-outside backdrop — invisible behind a
+      // full-bleed lock card. Without this, declining the upsell has no visible
+      // exit and the editor reads as a dead end.
+      //
+      // Hidden while the camera is live or the shutter is mid-cycle, for the
+      // same reason `requestCanvasSaveAndDismiss` refuses to dismiss then:
+      // collapsing the container races the camera-session teardown. The way
+      // back from live mode is the in-canvas exit-camera button, and this
+      // reappears once the user is there.
+      if !isCanvasDismissBlockedByCamera {
+        Button {
+          dismissLockedCanvas()
+        } label: {
+          Text("Maybe later")
+            .font(.appSubheadline())
+            .foregroundColor(.appTextSecondary)
+        }
+      }
     }
     .padding(32)
     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1211,6 +1231,26 @@ struct DrawingCanvasView: View {
         }
       }
     }
+  }
+
+  /// Mirrors the two states in which `ContentView.requestCanvasSaveAndDismiss`
+  /// refuses to collapse the container: dismissing while the camera session is
+  /// live or mid-shutter-cycle races its teardown.
+  private var isCanvasDismissBlockedByCamera: Bool {
+    isCameraLive || isShutterCycling
+  }
+
+  /// Leaves a locked canvas without going through the save flow. There is
+  /// nothing to persist — the lock only ever shows on an empty slot — and
+  /// routing this through `runSaveFlow` would write an entry onto the very day
+  /// the gate forbids. Claiming `didSaveOnDismiss` keeps the `onDisappear` /
+  /// `isShowing` safety-net saves inert on the way out, so the exit stays a
+  /// pure no-op on user data.
+  private func dismissLockedCanvas() {
+    guard !isDismissing, !isCanvasDismissBlockedByCamera else { return }
+    isDismissing = true
+    didSaveOnDismiss = true
+    onDismiss()
   }
 
   /// Drive the dismiss so persistence never stutters the collapse animation:
