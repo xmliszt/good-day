@@ -645,6 +645,48 @@ struct DrawingCanvasView: View {
   }
 
   private var accessDeniedOverlay: some View {
+    // The card is bounded to the 342pt canvas square, so at large Dynamic Type
+    // or in a wordier locale its content can outgrow the space. Keep the
+    // centered layout while it fits and fall back to a scrollable one when it
+    // doesn't, so the upgrade CTA can never be clipped out of reach.
+    ViewThatFits(in: .vertical) {
+      accessDeniedContent
+      ScrollView { accessDeniedContent }
+    }
+    .padding(32)
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .background(.ultraThinMaterial.quaternary)
+    // Pinned outside the content flow on purpose: this is the guaranteed way
+    // out of a locked canvas, so it must not depend on the text fitting.
+    .overlay(alignment: .topTrailing) { lockDismissButton }
+    .clipShape(RoundedRectangle(cornerRadius: canvasCornerRadius, style: .continuous))
+  }
+
+  /// The close affordance for a locked canvas.
+  ///
+  /// Hidden while the camera is live or the shutter is mid-cycle, for the same
+  /// reason `requestCanvasSaveAndDismiss` refuses to dismiss then: collapsing
+  /// the container races the camera-session teardown. The way back from live
+  /// mode is the in-canvas exit-camera button, and this reappears once there.
+  @ViewBuilder
+  private var lockDismissButton: some View {
+    if !isCanvasDismissBlockedByCamera {
+      Button {
+        dismissLockedCanvas()
+      } label: {
+        Image(systemName: "xmark")
+          .font(.appFont(size: 13, weight: .bold))
+          .foregroundColor(.appTextSecondary)
+          .padding(12)
+          .contentShape(Circle())
+      }
+      // Reuses the existing catalog string rather than adding a "Close" key.
+      .accessibilityLabel(Text("Maybe later"))
+      .padding(4)
+    }
+  }
+
+  private var accessDeniedContent: some View {
     VStack(spacing: 16) {
       Image(systemName: "lock.fill")
         .font(.appFont(size: 40))
@@ -705,16 +747,11 @@ struct DrawingCanvasView: View {
         }
       }
 
-      // The canvas's usual way out is the checkmark, which is correctly dead on
-      // a locked day, leaving only the tap-outside backdrop — invisible behind a
-      // full-bleed lock card. Without this, declining the upsell has no visible
-      // exit and the editor reads as a dead end.
-      //
-      // Hidden while the camera is live or the shutter is mid-cycle, for the
-      // same reason `requestCanvasSaveAndDismiss` refuses to dismiss then:
-      // collapsing the container races the camera-session teardown. The way
-      // back from live mode is the in-canvas exit-camera button, and this
-      // reappears once the user is there.
+      // The spelled-out twin of the corner close button. The canvas's usual way
+      // out is the checkmark, which is correctly dead on a locked day, leaving
+      // only the tap-outside backdrop — invisible behind a full-bleed lock card.
+      // Two affordances is deliberate redundancy: the cost of a user not finding
+      // the exit here is force-quitting the app.
       if !isCanvasDismissBlockedByCamera {
         Button {
           dismissLockedCanvas()
@@ -725,10 +762,6 @@ struct DrawingCanvasView: View {
         }
       }
     }
-    .padding(32)
-    .frame(maxWidth: .infinity, maxHeight: .infinity)
-    .background(.ultraThinMaterial.quaternary)
-    .clipShape(RoundedRectangle(cornerRadius: canvasCornerRadius, style: .continuous))
   }
 
   // MARK: - Camera Reference
