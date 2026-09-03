@@ -215,41 +215,6 @@ class OnboardingViewModel: ObservableObject {
 
         // Use findOrCreate to get the single entry for this date (merges duplicates if any)
         let entryToUpdate = DayEntry.findOrCreate(for: todayCalendarDate, in: context)
-        let isNewJoodle = entryToUpdate.drawingData == nil || entryToUpdate.drawingData?.isEmpty == true
-
-        // If this is a revisit onboarding, check Joodle limits
-        if isRevisitingOnboarding {
-            let allEntriesDescriptor = FetchDescriptor<DayEntry>()
-            do {
-                let allEntries = try context.fetch(allEntriesDescriptor)
-
-                if isNewJoodle {
-                    // User is trying to create a NEW Joodle via revisit onboarding
-                    // Check if they're within their Joodle limit
-                    let currentJoodleCount = SubscriptionManager.shared.totalJoodleCount(from: allEntries)
-
-                    if !SubscriptionManager.shared.canCreateJoodle(currentTotalCount: currentJoodleCount) {
-                        print("OnboardingViewModel: Joodle limit reached, skipping save during revisit onboarding")
-                        return
-                    }
-                } else {
-                    // User is trying to EDIT an existing entry via revisit onboarding
-                    // Check if this Joodle is within the editable range for free users
-                    let entriesWithDrawings = allEntries
-                        .filter { $0.drawingData != nil }
-                        .sorted { $0.dateString < $1.dateString }
-
-                    if let index = entriesWithDrawings.firstIndex(where: { $0.id == entryToUpdate.id }) {
-                        if !SubscriptionManager.shared.canEditJoodle(atIndex: index) {
-                            print("OnboardingViewModel: Joodle #\(index + 1) is locked, skipping edit during revisit onboarding")
-                            return
-                        }
-                    }
-                }
-            } catch {
-                print("OnboardingViewModel: Failed to fetch entries for limit check: \(error)")
-            }
-        }
 
         // Update the entry with drawing data
         entryToUpdate.drawingData = data

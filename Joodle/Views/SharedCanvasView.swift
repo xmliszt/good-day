@@ -107,6 +107,17 @@ struct SharedCanvasView<TrailingHeader: View>: View {
   var buttonsConfig: CanvasButtonsConfig? = nil
   var canvasCornerRadius: CGFloat = 32
 
+  /// Makes the drawing surface inert without touching the buttons row. Scoped to
+  /// the canvas on purpose: disabling the whole view would propagate down and
+  /// kill the toolbar too, stranding the user with no way out of the editor.
+  var isCanvasInteractionDisabled: Bool = false
+
+  /// Covers the drawing surface only — never the buttons row above it — so a
+  /// host can lock the canvas (e.g. the Pro paywall) while leaving every
+  /// navigation control reachable. Applied outside `isCanvasInteractionDisabled`
+  /// so the overlay's own buttons stay tappable.
+  var canvasOverlay: AnyView? = nil
+
   /// Color for the strokes being drawn. Defaults to the global accent; the
   /// editor passes the date's month color so a doodle drawn under the rainbow
   /// theme is painted in that month's color as the finger moves.
@@ -240,6 +251,8 @@ struct SharedCanvasView<TrailingHeader: View>: View {
     placeholderData: Data? = nil,
     buttonsConfig: CanvasButtonsConfig? = nil,
     canvasCornerRadius: CGFloat = 32,
+    isCanvasInteractionDisabled: Bool = false,
+    canvasOverlay: AnyView? = nil,
     strokeColor: Color = .appAccent,
     backdropImage: UIImage? = nil,
     backdropZoom: CGFloat = 1.0,
@@ -273,6 +286,8 @@ struct SharedCanvasView<TrailingHeader: View>: View {
     self.placeholderData = placeholderData
     self.buttonsConfig = buttonsConfig
     self.canvasCornerRadius = canvasCornerRadius
+    self.isCanvasInteractionDisabled = isCanvasInteractionDisabled
+    self.canvasOverlay = canvasOverlay
     self.strokeColor = strokeColor
     self.backdropImage = backdropImage
     self.backdropZoom = backdropZoom
@@ -802,6 +817,12 @@ struct SharedCanvasView<TrailingHeader: View>: View {
           .frame(width: CANVAS_SIZE, height: CANVAS_SIZE)
           .allowsHitTesting(false)
       }
+      // Scoped to the drawing surface, not the whole VStack: the buttons row is
+      // a sibling above, so it stays interactive and the user can always leave.
+      // `.disabled` is applied before `.overlay` so the overlay's own CTA is
+      // still tappable while everything beneath it is inert.
+      .disabled(isCanvasInteractionDisabled)
+      .overlay { canvasOverlay }
     }
     .onAppear {
       decodePlaceholder()

@@ -78,6 +78,7 @@ struct EntryEditingView: View {
   @State private var showShareSheet = false
   @State private var _showReminderSheetInternal = false
   @StateObject private var reminderManager = ReminderManager.shared
+  @StateObject private var subscriptionManager = SubscriptionManager.shared
 
   /// Track the view's top Y position in global coordinate space for dynamic drawing sizing
   @State private var topYPosition: CGFloat = 0
@@ -281,7 +282,16 @@ struct EntryEditingView: View {
             Button {
               onMoveDrawingRequested?(index)
             } label: {
-              Label("Move to Another Date", systemImage: "arrow.up.right.square")
+              // contextMenu renders Button labels through UIMenu, which only
+              // supports a single title string + a single icon glyph — an
+              // inline-image Text (verified against the running simulator)
+              // gets dropped from the visual row even though it survives into
+              // the accessibility label. The crown has to replace the action
+              // icon rather than sit alongside it.
+              Label(
+                "Move to Another Date",
+                systemImage: subscriptionManager.hasPremiumAccess ? "arrow.up.right.square" : "crown.fill"
+              )
             }
             Button(role: .destructive) {
               doodlePendingDeletionIndex = index
@@ -383,7 +393,10 @@ struct EntryEditingView: View {
                     Button {
                       onMoveDrawingRequested?(0)
                     } label: {
-                      Label(String(localized: "Move to Another Date"), systemImage: "arrow.up.right.square")
+                      Label(
+                        "Move to Another Date",
+                        systemImage: subscriptionManager.hasPremiumAccess ? "arrow.up.right.square" : "crown.fill"
+                      )
                     }
                   }
                   .tutorialHighlightAnchor("entryDrawing", isEnabled: tutorialMode)
@@ -545,7 +558,15 @@ struct EntryEditingView: View {
         Button("Delete", role: .destructive) { deleteDoodle(at: index) }
         Button("Cancel", role: .cancel) {}
       } message: { _ in
-        Text("Delete this doodle? This cannot be undone.")
+        // Deleting the only doodle on a past day is irreversible for a free
+        // user — that day can never be redrawn since Free is today-only.
+        if !subscriptionManager.hasPremiumAccess && !isToday && entry?.doodleCount == 1 {
+          // Replaces the standard message rather than appending to it — this
+          // string already carries the "can't be undone" warning itself.
+          Text("This can't be undone. On Free you can only doodle today, so this day will stay empty.")
+        } else {
+          Text("Delete this doodle? This cannot be undone.")
+        }
       }
       .sheet(isPresented: $showShareSheet) {
         // Share the doodle currently shown in the carousel, not always the first.

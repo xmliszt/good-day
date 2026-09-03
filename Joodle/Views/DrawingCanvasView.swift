@@ -12,11 +12,17 @@ import UIKit
 
 // MARK: - Joodle Access State
 
+/// Day-scoped access for the slot this canvas is pointed at. There is no
+/// "editing locked" case on purpose: an already-drawn doodle is editable by
+/// everyone, on any day, forever — that guarantee holds by construction here
+/// rather than by a runtime check.
 enum JoodleAccessState {
   case canCreate
   case canEdit
-  case limitReached
-  case editingLocked(reason: String)
+  /// Free plan: this day is not today, so filling it in is Pro-only.
+  case dayLocked
+  /// Free plan: today already holds its one free doodle.
+  case dailyLimitReached
 }
 
 // MARK: - Drawing Canvas View with Thumbnail Generation
@@ -209,7 +215,7 @@ struct DrawingCanvasView: View {
     switch accessState {
     case .canCreate, .canEdit:
       return true
-    case .limitReached, .editingLocked:
+    case .dayLocked, .dailyLimitReached:
       return false
     }
   }
@@ -326,6 +332,10 @@ struct DrawingCanvasView: View {
           isDrawing: $isDrawing,
           buttonsConfig: canvasButtonsConfig,
           canvasCornerRadius: canvasCornerRadius,
+          // Locked days make the drawing surface inert and cover it with the
+          // paywall prompt, while the buttons row above stays reachable.
+          isCanvasInteractionDisabled: !isMockMode && !canEditOrCreate,
+          canvasOverlay: (!isMockMode && !canEditOrCreate) ? AnyView(accessDeniedOverlay) : nil,
           strokeColor: Color.appDrawingColor(for: date),
           backdropImage: cameraBackdropImage,
           backdropZoom: isCameraFeatureActive ? cameraContext.backdropZoom : 1.0,
@@ -367,7 +377,10 @@ struct DrawingCanvasView: View {
             }
           }
           .circularGlassButton()
-          .disabled(isSaving)
+          // Also gated on access: the buttons row stays live while the canvas is
+          // locked (so the user can leave), which would otherwise leave Save
+          // tappable on a day they aren't allowed to draw on.
+          .disabled(isSaving || !canEditOrCreate)
           .tutorialHighlightAnchor(.button(id: .canvasSaveButton), cornerRadius: 22)
           // Same gating rationale as the camera button's tip below: the canvas
           // stays tucked in the tree when collapsed, and the bubble must not
@@ -376,14 +389,7 @@ struct DrawingCanvasView: View {
             FeatureTipDefinitions.AnchorID.canvasFinish,
             isEnabled: isShowing && canEditOrCreate)
         }
-        .disabled(!canEditOrCreate)
         .background(Color.clear)
-        .overlay {
-          // Show lock overlay when access is denied (not in mock mode)
-          if !isMockMode && !canEditOrCreate {
-            accessDeniedOverlay
-          }
-        }
         .fixedSize(horizontal: false, vertical: true)
 
         // Inspiration prompt text — centered, below the canvas (hidden in tutorial mode)
@@ -550,7 +556,7 @@ struct DrawingCanvasView: View {
       Text("Clear all drawing?")
     }
     .sheet(isPresented: $showPaywall) {
-      StandalonePaywallView(source: "entry_limit")
+      StandalonePaywallView(source: "backfill")
     }
     .sheet(isPresented: $showTrialClaim) {
       TrialClaimPaywallView(source: "entry_limit")
@@ -627,46 +633,89 @@ struct DrawingCanvasView: View {
     trialOfferManager.isClaimOfferAvailable
   }
 
+  /// The subtitle under a lock title: the trial-claim pitch when a claimable
+  /// free trial is available, otherwise the lock state's own upgrade message.
+  private func lockMessage(_ message: Text) -> some View {
+    (canOfferTrialClaim
+      ? Text("Your next 7 days of doodling can be free — Joodle Pro, on us")
+      : message)
+      .font(.appSubheadline())
+      .foregroundColor(.appTextPrimary.opacity(0.8))
+      .multilineTextAlignment(.center)
+  }
+
   private var accessDeniedOverlay: some View {
+    // The card is bounded to the 342pt canvas square, so at large Dynamic Type
+    // or in a wordier locale its content can outgrow the space. Keep the
+    // centered layout while it fits and fall back to a scrollable one when it
+    // doesn't, so the upgrade CTA can never be clipped out of reach.
+    ViewThatFits(in: .vertical) {
+      accessDeniedContent
+      ScrollView { accessDeniedContent }
+    }
+    .padding(32)
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .background(.ultraThinMaterial.quaternary)
+    // Pinned outside the content flow on purpose: this is the guaranteed way
+    // out of a locked canvas, so it must not depend on the text fitting.
+    .overlay(alignment: .topTrailing) { lockDismissButton }
+    .clipShape(RoundedRectangle(cornerRadius: canvasCornerRadius, style: .continuous))
+  }
+
+  /// The close affordance for a locked canvas.
+  ///
+  /// Hidden while the camera is live or the shutter is mid-cycle, for the same
+  /// reason `requestCanvasSaveAndDismiss` refuses to dismiss then: collapsing
+  /// the container races the camera-session teardown. The way back from live
+  /// mode is the in-canvas exit-camera button, and this reappears once there.
+  @ViewBuilder
+  private var lockDismissButton: some View {
+    if !isCanvasDismissBlockedByCamera {
+      Button {
+        dismissLockedCanvas()
+      } label: {
+        Image(systemName: "xmark")
+          .font(.appFont(size: 13, weight: .bold))
+          .foregroundColor(.appTextSecondary)
+          .padding(12)
+          .contentShape(Circle())
+      }
+      // Reuses the existing catalog string rather than adding a "Close" key.
+      .accessibilityLabel(Text("Maybe later"))
+      .padding(4)
+    }
+  }
+
+  private var accessDeniedContent: some View {
     VStack(spacing: 16) {
       Image(systemName: "lock.fill")
         .font(.appFont(size: 40))
         .foregroundColor(.appTextPrimary)
 
       switch accessState {
-      case .limitReached:
-        Text("You've reached your free Joodle limit")
+      case .dayLocked:
+        Text("Free lets you doodle today")
           .font(.appHeadline())
           .foregroundColor(.appTextPrimary)
           .multilineTextAlignment(.center)
 
-        if canOfferTrialClaim {
-          Text("Your next 7 days of doodling can be free — Joodle Pro, on us")
-            .font(.appSubheadline())
-            .foregroundColor(.appTextPrimary.opacity(0.8))
-            .multilineTextAlignment(.center)
-        } else {
-          Text("Upgrade to Joodle Pro for unlimited Joodles")
-            .font(.appSubheadline())
-            .foregroundColor(.appTextPrimary.opacity(0.8))
-            .multilineTextAlignment(.center)
-        }
+        lockMessage(Text("Upgrade to fill in any day and complete your year."))
 
-      case .editingLocked(let reason):
-        Text("Editing Locked")
+      case .dailyLimitReached:
+        Text("Free is one doodle a day")
           .font(.appHeadline())
           .foregroundColor(.appTextPrimary)
-
-        Text(reason)
-          .font(.appSubheadline())
-          .foregroundColor(.appTextPrimary.opacity(0.8))
           .multilineTextAlignment(.center)
+
+        lockMessage(Text("Upgrade to add up to three doodles to any day."))
 
       default:
         EmptyView()
       }
 
-      if canOfferTrialClaim, case .limitReached = accessState {
+      // The overlay only renders while access is denied, so a claimable trial
+      // always merchandises the claim instead of the purchase paywall here.
+      if canOfferTrialClaim {
         Button {
           showTrialClaim = true
         } label: {
@@ -697,11 +746,22 @@ struct DrawingCanvasView: View {
           .cornerRadius(32)
         }
       }
+
+      // The spelled-out twin of the corner close button. The canvas's usual way
+      // out is the checkmark, which is correctly dead on a locked day, leaving
+      // only the tap-outside backdrop — invisible behind a full-bleed lock card.
+      // Two affordances is deliberate redundancy: the cost of a user not finding
+      // the exit here is force-quitting the app.
+      if !isCanvasDismissBlockedByCamera {
+        Button {
+          dismissLockedCanvas()
+        } label: {
+          Text("Maybe later")
+            .font(.appSubheadline())
+            .foregroundColor(.appTextSecondary)
+        }
+      }
     }
-    .padding(32)
-    .frame(maxWidth: .infinity, maxHeight: .infinity)
-    .background(.ultraThinMaterial.quaternary)
-    .clipShape(RoundedRectangle(cornerRadius: canvasCornerRadius, style: .continuous))
   }
 
   // MARK: - Camera Reference
@@ -833,43 +893,31 @@ struct DrawingCanvasView: View {
   // MARK: - Access Check
 
   private func checkAccessState() {
-    // Perform async verification with online check
+    // Grandfathering, by construction: a slot that already holds a doodle is
+    // editable by everyone on any day. Asking this FIRST — and never consulting
+    // the gate for it — is what makes an existing doodle impossible to lock out.
+    if slotHasDoodle {
+      accessState = .canEdit
+      return
+    }
+
+    // Empty slot: the day-scoped gate decides, with an online verification pass.
+    // It runs once, on open — a drawing started at 23:59 stays on the day it
+    // was opened; we deliberately never re-check on save.
     Task {
-      // Check if this is an existing Joodle (editing) or new Joodle (creating)
-      let hasExistingDrawing = entry?.drawingData != nil
+      let gate = await subscriptionManager.doodleGateWithVerification(
+        on: date,
+        existingDoodleCount: entry?.doodleCount ?? 0
+      )
 
-      if hasExistingDrawing, let entry = entry {
-        // Editing existing - verify access with online check
-        let canEdit = await subscriptionManager.canEditJoodleWithVerification(entry: entry, in: modelContext)
-
-        await MainActor.run {
-          if canEdit {
-            accessState = .canEdit
-          } else {
-            // Calculate index for error message
-            let targetDateString = entry.dateString
-            let descriptor = FetchDescriptor<DayEntry>(
-              predicate: #Predicate<DayEntry> {
-                $0.drawingData != nil && $0.dateString < targetDateString
-              }
-            )
-            let index = (try? modelContext.fetchCount(descriptor)) ?? 0
-            accessState = .editingLocked(
-              reason:
-                String(localized: "Free account can only edit the first \(SubscriptionManager.freeJoodlesAllowed) Joodles. This Joodle is #\(index + 1).")
-            )
-          }
-        }
-      } else {
-        // Creating new - verify access with online check
-        let canCreate = await subscriptionManager.checkAccessWithVerification(in: modelContext)
-
-        await MainActor.run {
-          if canCreate {
-            accessState = .canCreate
-          } else {
-            accessState = .limitReached
-          }
+      await MainActor.run {
+        switch gate {
+        case .allowed:
+          accessState = .canCreate
+        case .dayLocked:
+          accessState = .dayLocked
+        case .dailyLimitReached:
+          accessState = .dailyLimitReached
         }
       }
     }
@@ -1216,6 +1264,26 @@ struct DrawingCanvasView: View {
         }
       }
     }
+  }
+
+  /// Mirrors the two states in which `ContentView.requestCanvasSaveAndDismiss`
+  /// refuses to collapse the container: dismissing while the camera session is
+  /// live or mid-shutter-cycle races its teardown.
+  private var isCanvasDismissBlockedByCamera: Bool {
+    isCameraLive || isShutterCycling
+  }
+
+  /// Leaves a locked canvas without going through the save flow. There is
+  /// nothing to persist — the lock only ever shows on an empty slot — and
+  /// routing this through `runSaveFlow` would write an entry onto the very day
+  /// the gate forbids. Claiming `didSaveOnDismiss` keeps the `onDisappear` /
+  /// `isShowing` safety-net saves inert on the way out, so the exit stays a
+  /// pure no-op on user data.
+  private func dismissLockedCanvas() {
+    guard !isDismissing, !isCanvasDismissBlockedByCamera else { return }
+    isDismissing = true
+    didSaveOnDismiss = true
+    onDismiss()
   }
 
   /// Drive the dismiss so persistence never stutters the collapse animation:

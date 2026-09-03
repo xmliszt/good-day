@@ -28,7 +28,6 @@ class ReminderManager: ObservableObject {
 
     @Published private(set) var reminders: [Reminder] = []
 
-    private let maxFreeReminders = 5
     private let localStorageKey = "joodle_reminders"
     private let cloudStorageKey = "joodle_reminders_cloud"
     private var cancellables = Set<AnyCancellable>()
@@ -52,18 +51,6 @@ class ReminderManager: ObservableObject {
         if let observer = cloudChangeObserver {
             NotificationCenter.default.removeObserver(observer)
         }
-    }
-
-    // MARK: - Public Properties
-
-    /// Number of remaining free reminders available
-    var remainingFreeReminders: Int {
-        max(0, maxFreeReminders - reminders.count)
-    }
-
-    /// Whether the user has reached the free reminder limit
-    var hasReachedFreeLimit: Bool {
-        !SubscriptionManager.shared.hasPremiumAccess && reminders.count >= maxFreeReminders
     }
 
     // MARK: - Persistence
@@ -220,25 +207,6 @@ class ReminderManager: ObservableObject {
 
     // MARK: - Reminder Management
 
-    /// Synchronous check - uses cached subscription state
-    /// For critical access points, use canAddReminderWithVerification() first
-    func canAddReminder() -> Bool {
-        if SubscriptionManager.shared.hasPremiumAccess {
-            return true
-        }
-        return reminders.count < maxFreeReminders
-    }
-
-    /// Async access check with online verification
-    /// Use this before allowing reminder creation
-    func canAddReminderWithVerification() async -> Bool {
-        let hasAccess = await SubscriptionManager.shared.verifySubscriptionForAccess()
-        if hasAccess {
-            return true
-        }
-        return reminders.count < maxFreeReminders
-    }
-
     @discardableResult
     func addReminder(for dateString: String, at date: Date, entryBody: String? = nil) async -> Bool {
         // Debug logging
@@ -246,16 +214,6 @@ class ReminderManager: ObservableObject {
         formatter.dateStyle = .full
         formatter.timeStyle = .long
         formatter.timeZone = .current
-
-        // Check limit if adding new reminder (not updating existing)
-        let isUpdating = reminders.contains(where: { $0.dateString == dateString })
-        if !isUpdating {
-            let canAdd = await canAddReminderWithVerification()
-            if !canAdd {
-                print("❌ [ReminderManager] Cannot add reminder - limit reached or verification failed")
-                return false
-            }
-        }
 
         // Remove existing reminder for this dateString if any
         removeReminder(for: dateString, notify: false)
